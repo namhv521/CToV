@@ -1,0 +1,2 @@
+# Visual system
+Operate mode: a calm editing desk for a creator reviewing a script and a portrait composition together. Warm paper surfaces, ink typography, vermilion export action, precise thin dividers. Desktop: compact left navigation, editable script center, persistent right preview. Mobile: stack script and preview without hiding primary actions. Accessible labels, visible focus, reduced-motion support, real empty and error states. No decorative charts or invented metrics.
