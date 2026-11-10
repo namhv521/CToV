@@ -113,8 +113,8 @@ class Options(BaseModel):
     card_y: float = Field(default=0.28, ge=0.1, le=0.60)
     max_seconds: int = Field(default=120, ge=15, le=600)
     split_mode: Literal['duration', 'even', 'comments'] = 'duration'
-    video_count: int = Field(default=3, ge=1, le=120, strict=True)
-    comments_per_video: int = Field(default=5, ge=1, le=120, strict=True)
+    video_count: int = Field(default=3, ge=1, le=39, strict=True)
+    comments_per_video: int = Field(default=5, ge=1, le=39, strict=True)
     read_post: bool = True
     anonymous: bool = False
     meme_volume: float = Field(default=0.65, ge=0, le=1)

@@ -15,7 +15,7 @@ def comment_key(row):
     return (str(row.get('author') or 'Người dùng').strip(), content)
 
 
-def normalize(rows, limit=120):
+def normalize(rows, limit=39):
     result, seen = [], set()
     for row in rows:
         text = str(row.get('text') or '').strip()
@@ -38,7 +38,7 @@ def normalize(rows, limit=120):
     return result
 
 
-def top_comments(rows, limit=120):
+def top_comments(rows, limit=30):
     """Rank the entire observed set before applying the output cap."""
     unique = normalize(rows, limit=max(1, len(rows)))
     return sorted(unique, key=lambda row: row['likes'], reverse=True)[:limit]
@@ -137,10 +137,10 @@ async def configure_capture_zoom(context):
     })();""")
 
 
-async def collect(url, limit=120, headless=True, progress=None):
-    from playwright.async_api import async_playwright
-    if not 1 <= limit <= 120:
-        raise ValueError('Giới hạn bình luận phải từ 1 đến 120.')
+async def collect(url, limit=30, headless=True, progress=None):
+    from playwright.async_api import Error as PlaywrightError, async_playwright
+    if not 1 <= limit <= 30:
+        raise ValueError('Giới hạn bình luận phải từ 1 đến 30.')
     url = source_url(url)
     platform = 'tiktok' if 'tiktok.com' in urlsplit(url).hostname else 'threads'
     comments, post, pending = [], {}, []
@@ -205,11 +205,11 @@ async def collect(url, limit=120, headless=True, progress=None):
             original_error = ''
             try:
                 original = await capture_original_post(page, final)
-            except ValueError as exc:
+            except (ValueError, PlaywrightError) as exc:
                 original_error = str(exc)
             deadline = time.monotonic() + 600
             previous, stable = 0, 0
-            # Do not stop on the first 120: later pages can contain more-liked comments.
+            # Do not stop on the first 30: later pages can contain more-liked comments.
             while time.monotonic() < deadline:
                 await page.wait_for_timeout(1000)
                 await dismiss_capture_overlays(page)
@@ -285,6 +285,13 @@ async def collect(url, limit=120, headless=True, progress=None):
                 stable = stable + 1 if count == previous else 0
                 previous = count
                 if stable >= 8: break
+            if not original and platform == 'threads':
+                try:
+                    await page.goto(final, wait_until='domcontentloaded', timeout=20000)
+                    original = await capture_original_post(page, final)
+                    original_error = ''
+                except (ValueError, PlaywrightError) as exc:
+                    original_error = str(exc)
             if pending: await asyncio.gather(*pending, return_exceptions=True)
             if not post.get('text'):
                 meta = page.locator('meta[property="og:description"]').first

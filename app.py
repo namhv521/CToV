@@ -151,10 +151,21 @@ def projects():
 def save_project(project: Project):
     with project_lock:
         saved = read(DATA / 'projects' / f'{project.id}.json', {})
-        # A tab opened before capture must not erase the captured original.
-        if (not project.post_image and saved.get('post_image')
-                and project.url == saved.get('url') and project.post == saved.get('post')):
-            project.post_image = saved['post_image']
+        # A failed recrawl or a stale tab can submit empty capture fields.
+        current_source = project.url.split('#', 1)[0].split('?', 1)[0].rstrip('/')
+        saved_image = saved.get('post_image')
+        metadata = read(DATA / 'assets' / f'{ident(saved_image)}.json', {}) if saved_image else {}
+        saved_url = metadata.get('source_url') or saved.get('url', '')
+        saved_source = saved_url.split('#', 1)[0].split('?', 1)[0].rstrip('/')
+        if (not project.post_image and saved_image
+                and current_source == saved_source
+                and (current_source or project.post == saved.get('post'))):
+            if project.post_capture_error and project.crawl_note.endswith(project.post_capture_error):
+                project.crawl_note = (project.crawl_note.removesuffix(project.post_capture_error).rstrip()
+                                      + ' Đã giữ ảnh bài gốc chụp trước đó.').strip()
+            project.post = saved['post']
+            project.author = saved.get('author', '')
+            project.post_image = saved_image
             project.post_captured_at = saved.get('post_captured_at', '')
             project.post_capture_error = ''
         folder = project_folder(project)
@@ -172,7 +183,7 @@ def get_project(pid: str):
 
 class CrawlRequest(BaseModel):
     url: str = Field(max_length=2000)
-    limit: int = Field(default=120, ge=1, le=120)
+    limit: int = Field(default=39, ge=1, le=39)
     project_id: str | None = None
 
 
@@ -188,13 +199,18 @@ def crawl(body: CrawlRequest):
         crawl_state.update(status='running', seen=0, captured=0, failed=0,
                            last_error='', limit=body.limit, started=time.time())
         result = asyncio.run(collect(body.url, body.limit, progress=crawl_state.update))
-        crawl_state.update(status='done', captured=len(result['comments']), message=result['crawl_note'])
         if body.project_id:
             existing = read(DATA / 'projects' / f'{body.project_id}.json', {})
             existing.update(id=body.project_id, url=result['url'], post=result.get('post', ''),
                             author=result.get('author', ''), post_image=result.get('post_image',''),
                             post_captured_at=result.get('post_captured_at',''), post_capture_error=result.get('post_capture_error',''), comments=result['comments'], crawl_note=result['crawl_note'])
-            save_project(Project(**existing))
+            project = Project(**existing)
+            save_project(project)
+            if project.post_image and not result.get('post_image'):
+                result.update(post=project.post, author=project.author, post_image=project.post_image,
+                              post_captured_at=project.post_captured_at, post_capture_error='',
+                              crawl_note=project.crawl_note)
+        crawl_state.update(status='done', captured=len(result['comments']), message=result['crawl_note'])
         return result
     except ValueError as exc:
         crawl_state.update(status='failed', message=str(exc))

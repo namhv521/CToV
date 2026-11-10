@@ -19,18 +19,21 @@ source => {
   if(!card)return null;
   const author=card.querySelector('[data-e2e="browse-username"]')||Array.from(card.querySelectorAll('a[href]')).find(a=>/^\/@[^/]+\/?$/.test(a.getAttribute('href')||'')&&a.innerText.trim());
   const parts=threads?Array.from(card.querySelectorAll('span[dir="auto"]'))
-    .filter(s=>!s.closest('a,button,time,[role="button"]')&&!s.querySelector('time,span[dir="auto"]'))
+    .filter(s=>!s.closest('a,button,time,[role="button"],[aria-hidden="true"],[contenteditable="true"]')&&!s.querySelector('time,span[dir="auto"]'))
     .map(s=>{
       // Timestamp wrappers and nested Translate controls are UI, not speech.
       const copy=s.cloneNode(true);
-      copy.querySelectorAll('button,time,[role="button"]').forEach(node=>node.remove());
+      copy.querySelectorAll('button,time,[role="button"],[aria-hidden="true"],[contenteditable="true"]').forEach(node=>node.remove());
       copy.querySelectorAll('br').forEach(node=>node.replaceWith('\n'));
       return copy.textContent.trim();
     }).filter(Boolean):[card.querySelector('[data-e2e="browse-video-desc"]')?.innerText||''];
   const text=Array.from(new Set(parts)).join('\n').trim();
   if(!text&&!card.querySelector('img,video'))return null;
-  // A temporary marker identifies this exact node without cloning its content.
+  const row={id:source,author:author?.innerText.trim()||'',text,comment_url:source,capture_zoom:1.25};
+  // Threads can replace the root card during hydration. Resolve it again by permalink.
+  if(threads)return {...row,
+    capture_selector:'a[href='+JSON.stringify(anchor.getAttribute('href'))+']:has(time)',
+    capture_parent:'ancestor::*[@data-pressable-container="true"][1]'};
   card.setAttribute('data-commentcut-original','true');
-  return {id:source,author:author?.innerText.trim()||'',text,comment_url:source,
-    capture_selector:'[data-commentcut-original="true"]',capture_index:0,capture_zoom:1.25};
+  return {...row,capture_selector:'[data-commentcut-original="true"]'};
 }

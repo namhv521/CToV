@@ -32,9 +32,16 @@ class OriginalPostTests(unittest.TestCase):
                         await page.set_content(f'''<main><article data-pressable-container="true" style="width:400px;background:white">
                           <a href="/@root">Tác giả</a><span dir="auto"><a href="/@root/post/ROOT"><time>1h</time></a></span>
                           <span dir="auto">Bài viết gốc<div role="button">Translate</div></span><img src="{photo()}" width="300" height="200">
-                          <footer>128 · Trả lời</footer></article>
+                          <footer>128 · Trả lời</footer>
+                          <div aria-hidden="true"><span dir="auto">Reply to root...</span></div></article>
                           <article data-pressable-container="true" style="background:blue;height:100px"><a href="/@other/post/OTHER"><time>1m</time></a>Không chụp bình luận này</article></main>''')
-                        with patch('capture.DATA',data):
+                        capture_card = capture.capture_comment
+
+                        async def capture_after_hydration(page, row, source, role):
+                            await page.locator('article').first.evaluate('card => { card.outerHTML = card.outerHTML.replace(/ data-commentcut-original="true"/g, ""); }')
+                            return await capture_card(page, row, source, role)
+
+                        with patch('capture.DATA',data), patch('capture.capture_comment', capture_after_hydration):
                             result=await capture.capture_original_post(page,page.url)
                         self.assertEqual(result['text'],'Bài viết gốc')
                         self.assertEqual(result['author'],'Tác giả')
@@ -70,6 +77,10 @@ class OriginalPostTests(unittest.TestCase):
             aid='d'*32;path=data/'assets'/(aid+'.png');Image.new('RGB',(200,100),'gray').save(path)
             core.write(path.with_suffix('.json'),{'id':aid,'kind':'image','file':path.name,'role':'post_capture'})
             async def collect(url,limit,progress):
+                if '?retry' in url:
+                    return {'url':url,'post':'Fallback text','author':'Fallback author','post_image':'',
+                            'post_capture_error':'Capture failed','comments':[{'text':'Comment','image':aid}],
+                            'crawl_note':'Fixture. Capture failed'}
                 return {'url':url,'post':'Original','author':'Root','post_image':aid,'post_captured_at':'2026-11-04T00:00:00Z',
                         'comments':[{'text':'Comment','image':aid}],'crawl_note':'Fixture'}
             with patch('core.DATA',data),patch('app.DATA',data),patch('collector.collect',collect),TestClient(app.app) as client:
@@ -89,6 +100,11 @@ class OriginalPostTests(unittest.TestCase):
                 self.assertEqual(restored['post_image'],aid)
                 self.assertEqual(restored['post_capture_error'],'')
                 self.assertEqual(restored['name'],'Edited in old tab')
+                retried=client.post('/api/crawl',json={'url':saved['url']+'?retry','project_id':project.id}).json()
+                self.assertEqual(retried['post_image'],aid)
+                self.assertEqual(retried['post'],'Original')
+                self.assertEqual(retried['post_capture_error'],'')
+                self.assertEqual(client.get('/api/projects/'+project.id).json()['crawl_note'],retried['crawl_note'])
                 stale['url']='https://www.threads.com/@root/post/OTHER'
                 client.post('/api/projects',json=stale)
                 self.assertEqual(client.get('/api/projects/'+project.id).json()['post_image'],'')
