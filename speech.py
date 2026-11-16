@@ -95,11 +95,23 @@ def download_audio(client, url, target):
 
 
 def narration_options(options, index=0):
-    if options.provider != 'elevenlabs' or not any(options.elevenlabs_voices):
+    voices = options.elevenlabs_voices
+    if options.provider != 'elevenlabs' or voices in (('',), ('', '', '')):
         return options
-    if not all(options.elevenlabs_voices):
-        raise ValueError('Nhập đủ 3 Voice ID ElevenLabs để đọc luân phiên.')
-    return options.model_copy(update={'voice': options.elevenlabs_voices[index % 3]})
+    if not all(voices):
+        raise ValueError(f'Nhập đủ {len(voices)} Voice ID ElevenLabs.')
+    return options.model_copy(update={'voice': voices[index % len(voices)]})
+
+
+def batch_narration_options(options):
+    options = options.model_copy(update={'provider': 'elevenlabs'})
+    narration_options(options)
+    cfg = settings()
+    if not cfg['elevenlabs_key']:
+        raise ValueError('Lưu API key ElevenLabs trong Giọng đọc & API trước khi dựng.')
+    if not any(options.elevenlabs_voices) and not cfg['elevenlabs_voice']:
+        raise ValueError('Nhập Voice ID ElevenLabs trong cấu hình dựng video.')
+    return options
 
 
 def has_spoken_text(text):

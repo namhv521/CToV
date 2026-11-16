@@ -178,7 +178,6 @@ def render_project(project, folder, progress, cancelled, home):
         for item in pool:
             meme_sound(item)  # Validate name pairs before spending time on TTS.
     prepared = {}
-    voice_index = 0
     intro_count = int(options.read_post and bool(project.post.strip() or project.post_image))
     audio_cache = home / 'audio' / 'prepared'
     picture_cache = home / 'images' / 'prepared'
@@ -187,7 +186,6 @@ def render_project(project, folder, progress, cancelled, home):
     stage_progress = 5
 
     def prepare(i):
-        nonlocal voice_index
         if i in prepared:
             return prepared[i].copy()
         if cancelled(): raise InterruptedError('Đã hủy')
@@ -198,10 +196,12 @@ def render_project(project, folder, progress, cancelled, home):
         audio, selected_voice, seconds = None, '', 3.0
         if speech_text:
             is_intro = intro_count and i == 0
-            selected_options = narration_options(options, 0 if is_intro else voice_index)
+            selected_options = options
+            if options.provider == 'elevenlabs' and any(options.elevenlabs_voices):
+                voice_id = options.elevenlabs_voices[0] if is_intro else random.choice(options.elevenlabs_voices)
+                selected_options = options.model_copy(update={'voice': voice_id})
             # synthesize reuses the existing, provider/voice/text-specific local MP3 cache.
             speech = synthesize(speech_text, selected_options, cancelled)
-            if not is_intro: voice_index += 1
             selected_voice = selected_options.voice if options.provider == 'elevenlabs' and any(options.elevenlabs_voices) else ''
             signature = hashlib.sha256(speech.read_bytes() + f':{options.speed}:loudnorm-v1'.encode()).hexdigest()
             cached_audio = audio_cache / (signature + '.wav')

@@ -6,6 +6,12 @@
 
 ## Chạy trên Windows
 
+**Bản EXE (Windows x64):** mở `CommentCut.exe` và giữ cửa sổ ứng dụng chạy khi dựng video. Không cần cài Python. Cài [FFmpeg](https://ffmpeg.org/download.html) vào PATH hoặc để `ffmpeg.exe` và `ffprobe.exe` cùng thư mục với CommentCut. Cài Chrome nếu dùng tính năng lấy bình luận. Để dựng video, nhập API key và Voice ID ElevenLabs của người dùng. Dữ liệu bản EXE nằm trong `%LOCALAPPDATA%\CommentCut`.
+
+Để tự đóng gói lại, cài `pyinstaller==6.22.3` vào `.venv`, rồi chạy `powershell -NoProfile -ExecutionPolicy Bypass -File .\build-exe.ps1`. Kết quả: `dist\CommentCut.exe`.
+
+**Bản mã nguồn:**
+
 Máy hiện tại đã có môi trường `.venv` và FFmpeg. Mở `start.bat`, vào **http://127.0.0.1:8765**. Giữ tiến trình ứng dụng chạy khi dựng video.
 
 Khi chuyển sang máy mới:
@@ -30,7 +36,7 @@ Server chỉ nghe `127.0.0.1:8765`. Đây là công cụ cá nhân cục bộ; k
 2. **Biên tập video:** dán link TikTok hoặc Threads, chọn tối đa 10–100 bình luận rồi bấm **Lấy bình luận**. Nếu cần đăng nhập, bấm nút tương ứng, đăng nhập trong Chrome riêng, đóng cửa sổ đó rồi lấy lại dữ liệu.
 3. Xem lại nội dung bài gốc. Có thể tắt đọc mở đầu.
 4. Chọn, sửa, bỏ bình luận, xếp theo lượt thích hoặc dùng nút lên/xuống. Mở mục dưới từng bình luận để đặt lời đọc riêng, ảnh chụp thay thế. Meme tự chèn giữa các bình luận, chèn sau mở đầu nếu bật, không chèn sau bình luận cuối mỗi video.
-5. Chọn nền, giọng, tốc độ, độ phân giải và dòng ghi nguồn. Chọn ElevenLabs để nhập 3 Voice ID theo project, dùng chung API key trong **Giọng đọc & API**. Bình luận được đọc luân phiên 1–2–3–1, liên tục qua các phần; mở đầu dùng giọng 1, bình luận không có lời đọc không chiếm lượt. Có nút nghe thử từng giọng. Để cả 3 ô trống giữ chế độ một giọng đã lưu; nhập một phần sẽ báo cần đủ 3. Hai nút **Ảnh meme** và **Âm thanh meme** bật/tắt độc lập: chỉ ảnh hiển thị 1,2 giây; chỉ âm thanh phát trên video nền; tắt cả hai bỏ đoạn meme và không cần file meme. Chỉ yêu cầu media cho phần đang bật. Dòng ghi nguồn trượt liên tục theo đường cong trong từng video, đổi hướng mượt, không nhảy vị trí giữa bình luận và meme. Chữ luôn nằm trong khung hình; để trống để tắt. Ảnh xem trước chỉ hiển thị vị trí ban đầu. **Bố cục & nhịp dựng** chứa vị trí ảnh, âm lượng, ẩn tên và thời lượng tối đa mỗi phần.
+5. Chọn nền, tốc độ, độ phân giải và dòng ghi nguồn. **Dựng hàng loạt** và **crawl kèm dựng tự động** dùng ElevenLabs. Lưu API key trong **Giọng đọc & API**. Trong **Số giọng ElevenLabs**, nhập từ 1 đến 120 và điền các Voice ID của dự án. Mỗi bình luận có lời đọc chọn ngẫu nhiên một ID, có thể trùng với bình luận trước. Phần mở đầu dùng giọng 1. Khi chọn một giọng, có thể để trống Voice ID để dùng giọng đã lưu trong **Giọng đọc & API**. Hai nút **Ảnh meme** và **Âm thanh meme** bật/tắt độc lập: chỉ ảnh hiển thị 1,2 giây; chỉ âm thanh phát trên video nền; tắt cả hai bỏ đoạn meme và không cần file meme. Chỉ yêu cầu media cho phần đang bật. Dòng ghi nguồn trượt liên tục theo đường cong trong từng video, đổi hướng mượt, không nhảy vị trí giữa bình luận và meme. Chữ luôn nằm trong khung hình; để trống để tắt. Ảnh xem trước chỉ hiển thị vị trí ban đầu. **Bố cục & nhịp dựng** chứa vị trí ảnh, âm lượng, ẩn tên và thời lượng tối đa mỗi phần.
 6. **Chọn kịch bản:** giữ cách chia theo thời lượng, chọn **Chia đều thành N video**, hoặc chọn **5 / 7 / 9 bình luận mỗi video** (có thể nhập số khác). Xem trước số video và các nhóm bình luận. Chỉ dùng bình luận đang chọn theo đúng thứ tự, nhóm cuối giữ phần dư. Mỗi video của kịch bản cố định lặp mở đầu nếu bật, chèn meme giữa các bình luận; nếu vượt thời lượng sẽ báo tăng giới hạn, không tự thay cách chia.
 7. **Nghe thử giọng**, lưu dự án và **Dựng hàng loạt** để xuất toàn bộ video trong một lần bấm. Theo dõi tiến độ hoặc hủy. Các bản xuất nằm trong **Video đã dựng** và `data/output/projectN/`, đặt tên theo dòng đầu bài viết (hoặc tên dự án nếu bài viết trống). Video chia phần có hậu tố phần; dựng lại thêm số phiên bản để tránh ghi đè. Dữ liệu từng dự án nằm trong `data/project/projectN/`: `images`, `comments`, `audio`, `renders`, `post.json`, `project.json`. Dữ liệu cũ được giữ nguyên; dự án cũ có thư mục mới khi lưu/dựng lại.
 
@@ -74,7 +80,7 @@ Hỗ trợ nhập JSON dự án đầy đủ đã xuất từ ứng dụng. ID t
 
 ### Miễn phí
 
-**Google TTS** mặc định: tiếng Việt, không cần key, cần Internet. Đã tạo và xuất audio thực trong bản bàn giao. Đây là kết nối qua gTTS, không phải Google Cloud TTS trả phí, không có SLA. Nếu dịch vụ giới hạn thì ứng dụng báo lỗi để bạn chọn giọng khác. Không tự chuyển qua dịch vụ trả phí.
+**Google TTS** mặc định khi nghe thử: tiếng Việt, không cần key, cần Internet. Đã tạo và xuất audio thực trong bản bàn giao. Đây là kết nối qua gTTS, không phải Google Cloud TTS trả phí, không có SLA. Nếu dịch vụ giới hạn thì ứng dụng báo lỗi để bạn chọn giọng khác. Không tự chuyển qua dịch vụ trả phí.
 
 **Edge TTS**: Hoài My hoặc Nam Minh. Phiên bản Edge TTS đã thử đầu phiên trả lỗi HTTP 403; dịch vụ có thể thay đổi. Bản mã nguồn dùng edge-tts được pin trong requirements, nhưng chỉ đường Google đã được xác minh đầu cuối. Tốc độ đọc áp dụng bằng FFmpeg cho mọi provider; nghe thử dùng cùng cách xử lý tốc độ/âm lượng.
 

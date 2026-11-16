@@ -56,7 +56,7 @@ class ElevenVoiceTests(unittest.TestCase):
         from speech import narration_options
         with self.assertRaisesRegex(ValueError,'đủ 3'):
             narration_options(Options(provider='elevenlabs',elevenlabs_voices=('one','','')))
-        for voices in (('one','two'),('one','two','three','four'),('one','bad/id','three')):
+        for voices in ((), ('one',)*121, ('one','bad/id','three')):
             with self.assertRaises(ValueError):Options(elevenlabs_voices=voices)
         legacy=Options(provider='elevenlabs')
         self.assertIs(narration_options(legacy),legacy)

@@ -15,7 +15,7 @@ def comment_key(row):
     return (str(row.get('author') or 'Người dùng').strip(), content)
 
 
-def normalize(rows, limit=39):
+def normalize(rows, limit=120):
     result, seen = [], set()
     for row in rows:
         text = str(row.get('text') or '').strip()
@@ -38,7 +38,7 @@ def normalize(rows, limit=39):
     return result
 
 
-def top_comments(rows, limit=30):
+def top_comments(rows, limit=120):
     """Rank the entire observed set before applying the output cap."""
     unique = normalize(rows, limit=max(1, len(rows)))
     return sorted(unique, key=lambda row: row['likes'], reverse=True)[:limit]
@@ -139,8 +139,8 @@ async def configure_capture_zoom(context):
 
 async def collect(url, limit=30, headless=True, progress=None):
     from playwright.async_api import Error as PlaywrightError, async_playwright
-    if not 1 <= limit <= 30:
-        raise ValueError('Giới hạn bình luận phải từ 1 đến 30.')
+    if not 1 <= limit <= 120:
+        raise ValueError('Giới hạn bình luận phải từ 1 đến 120.')
     url = source_url(url)
     platform = 'tiktok' if 'tiktok.com' in urlsplit(url).hostname else 'threads'
     comments, post, pending = [], {}, []

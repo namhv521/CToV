@@ -1,5 +1,7 @@
 import asyncio
+from datetime import datetime
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -16,12 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 
-from core import DATA, ROOT, Project, Options, assets, asset, ident, read, write, uid, probe, executable, source_url, project_folder, snapshot_project, script_groups, ensure_directory, require_screenshots
-from speech import public_settings, save_settings, synthesize, narration_options
+from core import (DATA, ROOT, Project, Options, assets, asset, ident, read, write, uid, probe,
+                  executable, source_url, project_folder, snapshot_project, script_groups,
+                  ensure_directory, require_screenshots, auto_project_name, local_date,
+                  infer_crawl_date, parse_url_lines)
+from speech import public_settings, save_settings, synthesize, narration_options, batch_narration_options
 from render import render, card, credit_image, credit_position
 
 pool = ThreadPoolExecutor(max_workers=1)
-events, lock = {}, threading.Lock()
+batch_pool = ThreadPoolExecutor(max_workers=1)
+events, batch_events, lock, batch_lock = {}, {}, threading.Lock(), threading.Lock()
 crawl_lock = threading.Lock()
 project_lock = threading.Lock()
 login_process = None
@@ -35,8 +41,17 @@ async def lifespan(app):
         if row['status'] in ('queued', 'running'):
             row.update(status='interrupted', message='Ứng dụng đã tắt giữa lúc dựng. Mở dự án rồi dựng lại.')
             write(path, row)
+    for path in (DATA / 'batches').glob('*.json'):
+        row = read(path)
+        if row and row.get('status') in ('queued', 'running'):
+            for item in row.get('items', []):
+                if item.get('status') in ('queued', 'crawling', 'rendering'):
+                    item.update(status='interrupted', message='Ứng dụng đã tắt giữa chừng.')
+            row.update(status='interrupted', message='Ứng dụng đã tắt giữa lúc crawl lô.')
+            write(path, row)
     yield
     for event in events.values(): event.set()
+    for event in batch_events.values(): event.set()
 
 
 app = FastAPI(title='CommentCut', lifespan=lifespan)
@@ -141,16 +156,79 @@ def asset_file(aid: str):
     return FileResponse(asset(aid))
 
 
+def latest_jobs_by_project():
+    latest = {}
+    for path in (DATA / 'jobs').glob('*/job.json'):
+        row = read(path, {})
+        pid = row.get('project_id')
+        if pid and row.get('created', 0) >= latest.get(pid, {}).get('created', 0):
+            latest[pid] = row
+    return latest
+
+
+def project_summary(path: Path, jobs_map: dict):
+    row = read(path, {})
+    comments = row.get('comments') or []
+    job_row = jobs_map.get(path.stem)
+    return {
+        'id': path.stem,
+        'name': row.get('name', 'Video chưa đặt tên'),
+        'url': row.get('url', ''),
+        'author': row.get('author', ''),
+        'post': row.get('post', '')[:200],
+        'comment_count': len(comments),
+        'selected_count': sum(1 for c in comments if c.get('selected', True)),
+        'crawled_at': row.get('crawled_at', ''),
+        'crawl_date': infer_crawl_date(row),
+        'updated': path.stat().st_mtime,
+        'job': ({
+            'id': job_row['id'],
+            'status': job_row['status'],
+            'progress': job_row.get('progress', 0),
+            'message': job_row.get('message', ''),
+            'files': [f for f in job_row.get('files', []) if f.endswith('.mp4')],
+        } if job_row else None),
+    }
+
+
 @app.get('/api/projects')
 def projects():
-    return sorted([{'id': p.stem, 'name': read(p)['name'], 'updated': p.stat().st_mtime}
-                   for p in (DATA / 'projects').glob('*.json')], key=lambda p: p['updated'], reverse=True)
+    jobs_map = latest_jobs_by_project()
+    return sorted([project_summary(p, jobs_map) for p in (DATA / 'projects').glob('*.json')],
+                  key=lambda p: p['updated'], reverse=True)
+
+
+@app.get('/api/crawl-days')
+def crawl_days():
+    jobs_map = latest_jobs_by_project()
+    grouped = {}
+    for path in (DATA / 'projects').glob('*.json'):
+        summary = project_summary(path, jobs_map)
+        if not summary['crawl_date']:
+            continue
+        grouped.setdefault(summary['crawl_date'], []).append(summary)
+    days = []
+    for date in sorted(grouped.keys(), reverse=True):
+        items = sorted(grouped[date], key=lambda p: (p['crawled_at'] or '', p['updated']), reverse=True)
+        rendered_videos = sum(len(item['job']['files']) for item in items if item.get('job') and item['job']['status'] == 'done')
+        days.append({
+            'date': date,
+            'project_count': len(items),
+            'comment_count': sum(item['comment_count'] for item in items),
+            'rendered_videos': rendered_videos,
+            'projects': items,
+        })
+    return days
 
 
 @app.post('/api/projects')
 def save_project(project: Project):
     with project_lock:
         saved = read(DATA / 'projects' / f'{project.id}.json', {})
+        if not project.crawled_at and saved.get('crawled_at'):
+            project.crawled_at = saved['crawled_at']
+        if not project.crawl_date:
+            project.crawl_date = saved.get('crawl_date') or infer_crawl_date(project.model_dump())
         # A failed recrawl or a stale tab can submit empty capture fields.
         current_source = project.url.split('#', 1)[0].split('?', 1)[0].rstrip('/')
         saved_image = saved.get('post_image')
@@ -183,7 +261,7 @@ def get_project(pid: str):
 
 class CrawlRequest(BaseModel):
     url: str = Field(max_length=2000)
-    limit: int = Field(default=39, ge=1, le=39)
+    limit: int = Field(default=30, ge=1, le=120)
     project_id: str | None = None
 
 
@@ -199,13 +277,23 @@ def crawl(body: CrawlRequest):
         crawl_state.update(status='running', seen=0, captured=0, failed=0,
                            last_error='', limit=body.limit, started=time.time())
         result = asyncio.run(collect(body.url, body.limit, progress=crawl_state.update))
+        now_iso = datetime.now().astimezone().isoformat()
+        today = local_date(now_iso)
+        suggested_name = auto_project_name(result.get('post', ''), result.get('author', ''), result.get('url', body.url))
+        result.update(crawled_at=now_iso, crawl_date=today, suggested_name=suggested_name)
         if body.project_id:
             existing = read(DATA / 'projects' / f'{body.project_id}.json', {})
+            current_name = str(existing.get('name') or '').strip()
+            if not current_name or current_name == 'Video chưa đặt tên':
+                existing['name'] = suggested_name
             existing.update(id=body.project_id, url=result['url'], post=result.get('post', ''),
                             author=result.get('author', ''), post_image=result.get('post_image',''),
-                            post_captured_at=result.get('post_captured_at',''), post_capture_error=result.get('post_capture_error',''), comments=result['comments'], crawl_note=result['crawl_note'])
+                            post_captured_at=result.get('post_captured_at',''), post_capture_error=result.get('post_capture_error',''),
+                            comments=result['comments'], crawl_note=result['crawl_note'],
+                            crawled_at=now_iso, crawl_date=today)
             project = Project(**existing)
             save_project(project)
+            result['name'] = project.name
             if project.post_image and not result.get('post_image'):
                 result.update(post=project.post, author=project.author, post_image=project.post_image,
                               post_captured_at=project.post_captured_at, post_capture_error='',
@@ -233,7 +321,13 @@ def login(platform: str):
     if platform not in ('tiktok', 'threads'): raise ValueError('Nguồn không hợp lệ')
     if crawl_lock.locked(): raise ValueError('Chờ crawl hoàn thành trước khi đăng nhập.')
     if login_process and login_process.poll() is None: raise ValueError('Cửa sổ đăng nhập đang mở.')
-    login_process = subprocess.Popen([sys.executable, str(ROOT / 'collector.py'), platform], cwd=ROOT,
+    if getattr(sys, 'frozen', False):
+        command = [sys.executable, '--login', platform]
+        env = {**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'}
+    else:
+        command = [sys.executable, str(ROOT / 'collector.py'), platform]
+        env = None
+    login_process = subprocess.Popen(command, cwd=DATA, env=env,
                                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     return {'message': 'Đăng nhập trong cửa sổ Chrome riêng rồi đóng cửa sổ đó để tiếp tục crawl.'}
 
@@ -249,13 +343,15 @@ def config_save(values: dict):
 
 
 class VoiceRequest(BaseModel):
-    voice_index: int = Field(default=0, ge=0, le=2)
+    voice_index: int = Field(default=0, ge=0, le=119)
     text: str = Field(default='Xin chào, cùng đọc bình luận hôm nay nhé.', min_length=1, max_length=250)
     options: Options = Field(default_factory=Options)
 
 
 @app.post('/api/voice-preview')
 def voice_preview(body: VoiceRequest):
+    if body.options.provider == 'elevenlabs' and body.voice_index >= len(body.options.elevenlabs_voices):
+        raise ValueError('Giọng ElevenLabs được chọn không còn trong danh sách.')
     path = synthesize(body.text, narration_options(body.options, body.voice_index))
     from render import run
     target = ensure_directory(DATA / 'cache') / (uid() + '.wav')
@@ -313,17 +409,17 @@ def work(jid, project):
         update_job(jid, status='failed', message=message)
 
 
-@app.post('/api/jobs')
-def create_job(project: Project):
+def enqueue_render_job(project: Project, max_active: int | None = 5):
     script_groups(project.comments, project.options)
-    narration_options(project.options)
     require_screenshots(project)
+    project.options = batch_narration_options(project.options)
     executable('ffmpeg'); executable('ffprobe')
     save_project(project)
     with lock:
-        active = [read(p) for p in (DATA / 'jobs').glob('*/job.json')]
-        if sum(j['status'] in ('queued', 'running') for j in active) >= 5:
-            raise ValueError('Hàng đợi đã đủ 5 dự án. Chờ hoặc hủy bớt.')
+        if max_active is not None:
+            active = [read(p) for p in (DATA / 'jobs').glob('*/job.json')]
+            if sum(j['status'] in ('queued', 'running') for j in active) >= max_active:
+                raise ValueError(f'Hàng đợi đã đủ {max_active} dự án. Chờ hoặc hủy bớt.')
         jid = uid()
         folder = DATA / 'jobs' / jid
         folder.mkdir()
@@ -333,6 +429,11 @@ def create_job(project: Project):
         write(folder / 'job.json', row)
     pool.submit(work, jid, project.model_copy(deep=True))
     return row
+
+
+@app.post('/api/jobs')
+def create_job(project: Project):
+    return enqueue_render_job(project, max_active=5)
 
 
 @app.get('/api/jobs')
@@ -366,6 +467,231 @@ def output_file(jid: str, name: str):
         if not __import__('re').fullmatch(r'project[1-9][0-9]*', directory): raise HTTPException(404)
         folder = DATA / 'output' / directory
     return FileResponse(folder / name, filename=name)
+
+
+def batch_path(bid):
+    return DATA / 'batches' / f'{ident(bid)}.json'
+
+
+def update_batch(bid, fn=None, **changes):
+    with batch_lock:
+        row = read(batch_path(bid))
+        if fn:
+            fn(row)
+        row.update(changes, updated=time.time())
+        write(batch_path(bid), row)
+        return row
+
+
+def default_batch_options():
+    return Options(provider='elevenlabs', split_mode='comments', comments_per_video=10, video_count=3)
+
+
+class BatchCrawlRequest(BaseModel):
+    urls: list[str] = Field(min_length=1, max_length=200)
+    limit: int = Field(default=30, ge=1, le=120)
+    auto_render: bool = True
+    options: Options = Field(default_factory=default_batch_options)
+
+
+def run_batch(bid: str, body: BatchCrawlRequest):
+    from collector import collect
+    event = batch_events[bid]
+    try:
+        if event.is_set():
+            raise InterruptedError('Đã hủy')
+        update_batch(bid, status='running', message=f'Đang chuẩn bị crawl {len(body.urls)} link…')
+        for index, raw_url in enumerate(body.urls):
+            if event.is_set():
+                raise InterruptedError('Đã hủy')
+            def mark_item(status, **extra):
+                def apply(row):
+                    row['current_index'] = index
+                    row['items'][index].update(status=status, **extra)
+                    row['completed'] = sum(1 for it in row['items'] if it['status'] in ('done', 'failed'))
+                return apply
+
+            update_batch(bid, fn=mark_item('crawling', message='Đang mở nguồn và chụp bình luận…'),
+                         message=f'Đang crawl {index + 1}/{len(body.urls)}: {raw_url[:70]}')
+            if not crawl_lock.acquire(timeout=600):
+                update_batch(bid, fn=mark_item('failed', message='Quá thời gian chờ khóa trình duyệt crawl.'))
+                continue
+            try:
+                if event.is_set():
+                    raise InterruptedError('Đã hủy')
+                if login_process and login_process.poll() is None:
+                    raise ValueError('Đóng cửa sổ Đăng nhập nguồn trước khi crawl.')
+                crawl_state.update(status='running', seen=0, captured=0, failed=0,
+                                   last_error='', limit=body.limit, started=time.time(),
+                                   batch_id=bid, batch_index=index + 1, batch_total=len(body.urls))
+                def on_progress(state):
+                    crawl_state.update(state)
+                    seen = crawl_state.get('seen', 0)
+                    cap = min(crawl_state.get('captured', 0), body.limit)
+                    update_batch(bid, fn=mark_item('crawling',
+                                 seen=seen, captured=cap,
+                                 message=f'Đã đọc {seen} cmt · giữ {cap}/{body.limit} ảnh'))
+                result = asyncio.run(collect(raw_url, body.limit, progress=on_progress))
+                now_iso = datetime.now().astimezone().isoformat()
+                today = local_date(now_iso)
+                name = auto_project_name(result.get('post', ''), result.get('author', ''), result.get('url', raw_url))
+                opts = body.options.model_copy(deep=True)
+                if opts.read_post and not result.get('post_image'):
+                    opts.read_post = False
+                if opts.split_mode == 'even' and result['comments'] and opts.video_count > len(result['comments']):
+                    opts.video_count = len(result['comments'])
+                project = Project(
+                    name=name,
+                    url=result['url'],
+                    post=result.get('post', ''),
+                    author=result.get('author', ''),
+                    post_image=result.get('post_image', ''),
+                    post_captured_at=result.get('post_captured_at', ''),
+                    post_capture_error=result.get('post_capture_error', ''),
+                    comments=result['comments'],
+                    options=opts,
+                    crawl_note=result['crawl_note'],
+                    crawled_at=now_iso,
+                    crawl_date=today,
+                )
+                save_project(project)
+                crawl_state.update(status='done', captured=len(project.comments), message=result['crawl_note'])
+                job_id = ''
+                item_msg = f'Đã lấy {len(project.comments)} bình luận.'
+                if body.auto_render:
+                    if not project.comments:
+                        item_msg = 'Chưa có bình luận chụp được nên bỏ qua dựng video.'
+                    else:
+                        try:
+                            job_row = enqueue_render_job(project, max_active=None)
+                            job_id = job_row['id']
+                            expected = len(script_groups(project.comments, project.options))
+                            item_msg = f'Đã lấy {len(project.comments)} bình luận · đang dựng {expected} video.'
+                        except Exception as render_exc:
+                            item_msg = f'Đã crawl ({len(project.comments)} cmt), lỗi xếp hàng dựng: {render_exc}'
+                update_batch(bid, fn=mark_item('done',
+                             project_id=project.id, name=project.name,
+                             comment_count=len(project.comments), job_id=job_id, message=item_msg))
+            except InterruptedError:
+                crawl_state.update(status='idle')
+                raise
+            except Exception as exc:
+                err_msg = str(exc) if isinstance(exc, ValueError) else f'Không đọc được nguồn ({type(exc).__name__}).'
+                crawl_state.update(status='failed', message=err_msg)
+                update_batch(bid, fn=mark_item('failed', message=err_msg))
+            finally:
+                crawl_lock.release()
+        final_row = read(batch_path(bid), {})
+        ok_count = sum(1 for it in final_row.get('items', []) if it['status'] == 'done')
+        fail_count = sum(1 for it in final_row.get('items', []) if it['status'] == 'failed')
+        summary = f'Hoàn tất {ok_count}/{len(body.urls)} link' + (f' ({fail_count} lỗi).' if fail_count else '.')
+        update_batch(bid, status='done', message=summary)
+    except InterruptedError:
+        def cancel_remaining(row):
+            for it in row.get('items', []):
+                if it['status'] in ('queued', 'crawling'):
+                    it.update(status='cancelled', message='Đã hủy theo yêu cầu.')
+        update_batch(bid, fn=cancel_remaining, status='cancelled', message='Đã dừng crawl hàng loạt. Các dự án đã xong vẫn được giữ.')
+    except Exception as exc:
+        update_batch(bid, status='failed', message=f'Lỗi lô crawl: {exc}')
+
+
+@app.post('/api/batch-crawl/parse')
+async def parse_batch_file(file: UploadFile = File(...)):
+    raw = await file.read(2_000_000)
+    if len(raw) >= 2_000_000:
+        raise ValueError('Tệp .txt vượt giới hạn 2MB.')
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        text = raw.decode('utf-16') if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else raw.decode('latin-1')
+    urls, invalid = parse_url_lines(text)
+    return {'urls': urls, 'invalid': invalid, 'count': len(urls)}
+
+
+@app.post('/api/batch-crawl')
+def start_batch_crawl(body: BatchCrawlRequest):
+    cleaned = []
+    seen = set()
+    for u in body.urls:
+        valid = source_url(u)
+        if valid not in seen:
+            seen.add(valid)
+            cleaned.append(valid)
+    if not cleaned:
+        raise ValueError('Không có URL TikTok/Threads hợp lệ để crawl.')
+    body.urls = cleaned
+    body.options = body.options.model_copy(update={'provider': 'elevenlabs'})
+    if body.auto_render:
+        body.options = batch_narration_options(body.options)
+        executable('ffmpeg'); executable('ffprobe')
+        backgrounds = [a for a in assets() if a.get('source_folder') == 'Vid_nen']
+        if not body.options.background and not backgrounds:
+            raise ValueError('Thêm ít nhất một video nền vào data/Vid_nen trước khi bật tự động render.')
+    with batch_lock:
+        ensure_directory(DATA / 'batches')
+        active = [read(p) for p in (DATA / 'batches').glob('*.json')]
+        if any(b and b.get('status') in ('queued', 'running') for b in active):
+            raise HTTPException(409, 'Đang có một tiến trình crawl hàng loạt đang chạy.')
+        bid = uid()
+        batch_events[bid] = threading.Event()
+        row = {
+            'id': bid,
+            'status': 'queued',
+            'created': time.time(),
+            'updated': time.time(),
+            'crawl_date': local_date(),
+            'limit': body.limit,
+            'auto_render': body.auto_render,
+            'split_mode': body.options.split_mode,
+            'comments_per_video': body.options.comments_per_video,
+            'video_count': body.options.video_count,
+            'total': len(cleaned),
+            'completed': 0,
+            'current_index': 0,
+            'message': f'Đang chờ xử lý {len(cleaned)} link…',
+            'items': [{'url': u, 'status': 'queued', 'message': 'Đang chờ', 'project_id': '', 'name': '', 'comment_count': 0, 'job_id': ''}
+                      for u in cleaned],
+        }
+        write(batch_path(bid), row)
+    batch_pool.submit(run_batch, bid, body.model_copy(deep=True))
+    return row
+
+
+@app.get('/api/batch-crawl')
+def list_batches():
+    rows = [read(p) for p in (DATA / 'batches').glob('*.json')]
+    return sorted([r for r in rows if r], key=lambda b: b['created'], reverse=True)[:20]
+
+
+@app.get('/api/batch-crawl/{bid}')
+def get_batch(bid: str):
+    row = read(batch_path(bid))
+    if not row:
+        raise HTTPException(404, 'Không tìm thấy lô crawl.')
+    jobs_map = {j['id']: j for j in (read(p) for p in (DATA / 'jobs').glob('*/job.json')) if j}
+    for item in row.get('items', []):
+        jid = item.get('job_id')
+        if jid and jid in jobs_map:
+            j = jobs_map[jid]
+            item['job'] = {
+                'id': j['id'],
+                'status': j['status'],
+                'progress': j.get('progress', 0),
+                'message': j.get('message', ''),
+                'files': [f for f in j.get('files', []) if f.endswith('.mp4')],
+            }
+    return row
+
+
+@app.post('/api/batch-crawl/{bid}/cancel')
+def cancel_batch(bid: str):
+    row = read(batch_path(bid))
+    if not row:
+        raise HTTPException(404, 'Không tìm thấy lô crawl.')
+    if row['status'] in ('queued', 'running') and bid in batch_events:
+        batch_events[bid].set()
+    return {'ok': True}
 
 
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')

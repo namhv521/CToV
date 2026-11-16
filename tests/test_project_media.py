@@ -375,7 +375,7 @@ class ProjectMediaTests(unittest.TestCase):
             with Image.open(io.BytesIO(response.content)) as image:
                 self.assertFalse(any(r>180 and g>170 and b<100 and a>0 for r,g,b,a in image.get_flattened_data()))
 
-    def test_three_voices_rotate_across_parts_without_counting_intro_or_silent_media(self):
+    def test_elevenlabs_samples_each_spoken_comment_across_parts(self):
         voice=self.batch_media(0)
         image=self.data/'assets'/(core.uid()+'.png')
         Image.new('RGB',(200,200),'gray').save(image)
@@ -383,13 +383,16 @@ class ProjectMediaTests(unittest.TestCase):
         project=core.Project(post='Intro',comments=[core.Comment(text='One'),core.Comment(text='Two'),
                              core.Comment(text='🙏🏻',image=image.stem),core.Comment(text='Skip',selected=False),
                              core.Comment(text='Three'),core.Comment(text='Four')],
-                             options=core.Options(provider='elevenlabs',elevenlabs_voices=('voice1','voice2','voice3'),
+                             options=core.Options(provider='elevenlabs',elevenlabs_voices=('voice1','voice2','voice3','voice4'),
                              use_meme_image=False,use_meme_sound=False,split_mode='comments',comments_per_video=2,resolution=360))
         folder=self.data/'jobs'/core.uid();folder.mkdir()
-        with patch('render.synthesize',return_value=voice) as speech:
+        with patch('render.synthesize',return_value=voice) as speech, \
+                patch('render.random.choice', side_effect=['voice4','voice4','voice2','voice1']) as choose:
+            project.options.background = core.assets()[0]['id']
             files=render.render(self.with_screenshots(project),folder,lambda *_:None,lambda:False)
+        self.assertEqual(choose.call_count, 4)
         self.assertEqual([(call.args[0],call.args[1].voice) for call in speech.call_args_list],
-                         [('Intro','voice1'),('One','voice1'),('Two','voice2'),('Three','voice3'),('Four','voice1')])
+                         [('Intro','voice1'),('One','voice4'),('Two','voice4'),('Three','voice2'),('Four','voice1')])
         self.assertEqual(len([name for name in files if name.endswith('.mp4')]),3)
         self.assertEqual(project.options.voice,'vi-VN-HoaiMyNeural')
         scenes=core.read(folder/'timeline.json')['scenes']

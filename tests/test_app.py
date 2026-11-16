@@ -42,10 +42,12 @@ class AppTests(unittest.TestCase):
     def test_job_cancellation(self):
         import time
         def wait_for_cancel(project,folder,progress,cancelled):
+            self.assertEqual(project.options.provider, 'elevenlabs')
             deadline=time.monotonic()+3
             while not cancelled() and time.monotonic()<deadline: time.sleep(.01)
             raise InterruptedError('cancel')
-        with TestClient(app) as c, patch('app.render',wait_for_cancel):
+        with TestClient(app) as c, patch('app.render',wait_for_cancel), \
+                patch('speech.settings', return_value={'elevenlabs_key':'test','elevenlabs_voice':'legacy'}):
             from PIL import Image
             image=DATA/'assets'/('b'*32+'.png');Image.new('RGB',(200,100),'gray').save(image)
             write(image.with_suffix('.json'),{'id':image.stem,'kind':'image','file':image.name})

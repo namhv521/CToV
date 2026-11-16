@@ -31,7 +31,7 @@ class TopCommentTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in top_comments(rows+rows)],['0','1','2'])
 
     def test_api_and_project_accept_120_reject_121(self):
-        self.assertEqual(CrawlRequest(url='https://www.tiktok.com/@a/video/1').limit,120)
+        self.assertEqual(CrawlRequest(url='https://www.tiktok.com/@a/video/1').limit,30)
         self.assertEqual(CrawlRequest(url='https://www.tiktok.com/@a/video/1',limit=120).limit,120)
         with self.assertRaises(ValueError): CrawlRequest(url='https://www.tiktok.com/@a/video/1',limit=121)
         self.assertEqual(len(Project(comments=[Comment(text=str(i)) for i in range(120)]).comments),120)
