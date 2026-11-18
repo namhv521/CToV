@@ -1,17 +1,14 @@
-# CommentCut
+# CommentCut Studio
 <!-- impeccable:product-schema 1 -->
 ## Platform
-web
+desktop (Windows standalone Chromium `--app` window + portable EXE)
 ## Stack
-Delegated by the user: local Python FastAPI, plain HTML/CSS/JavaScript, Pillow and FFmpeg. No frontend build or cloud account required.
+Local Python FastAPI, plain HTML/CSS/JavaScript, Pillow, Playwright, and FFmpeg. No frontend build step or cloud account required beyond ElevenLabs TTS.
 ## Users
-Vietnamese creators turning TikTok/Threads posts and comments into narrated vertical videos.
+Vietnamese creators producing high-volume narrated vertical videos from large batches of TikTok and Threads URLs.
 ## Product Purpose
-Import a public source, review and edit comments, assign memes and sounds, render downloadable MP4 with reusable background footage.
+Import tens or hundreds of public TikTok/Threads URLs (or `.txt` lists), automatically capture real post/comment cards, split into multi-part scripts, synthesize multi-voice ElevenLabs narration, insert paired memes/sounds, and render downloadable MP4s in bulk.
 ## Capabilities and Constraints
-Local media library; free online Vietnamese TTS; optional ElevenLabs and Vbee credentials; real post/comment screenshot scenes; sequential memes after introduction and between comments; persistent projects and rendering jobs. Public crawling is best effort and explicitly partial, never claims all comments. Manual JSON/text import remains available. User supplies gameplay and licensed meme assets. No automatic publishing.
-## Evidence on Hand
-Reference https://www.youtube.com/shorts/h-t9ggZKy-A opened in Chrome: vertical gameplay, white conversation image above center, yellow creator credit. Exact audio and frame-by-frame timing have not been extracted. Demo assets are original procedural placeholders, not the reference gameplay.
+Unified bulk production pipeline; persistent preset configuration; live batch queue with dynamic URL appending, 1-click retry for failed URLs, and 1-click bulk re-render for crawled posts; dedicated ElevenLabs multi-voice pool with SHA-256 audio caching; local media library (`Vid_nen`, `img_meme`, `mp3_meme`) with meme-pair diagnostics and native Windows Explorer folder shortcuts. Public crawling is best effort and never substitutes reconstructed text cards when capture fails.
 ## Product Principles
-Public-source collection captures actual rendered comment cards and stores their text separately for speech. Preserve native avatars and reaction counts in the captured pixels. Never substitute reconstructed comment images when capture fails.
-Review before rendering. Preserve full comment text. Report crawl limits. Keep provider credentials server-side. Prefer native tools.
+Capture actual rendered post/comment cards with native avatars and reaction counts. Keep API credentials strictly server-side (`data/settings.json`). Eliminate single-item manual friction in favor of automated bulk throughput, clear preflight diagnostics, and instant recovery actions.

@@ -16,7 +16,7 @@ class ProjectMediaTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='commentcut-project-')
         self.data = Path(self.temp.name)
-        for name in ('assets', 'projects', 'jobs', 'cache', 'project', 'output', 'Vid_nen', 'img_meme', 'mp3_meme'):
+        for name in ('assets', 'projects', 'jobs', 'cache', 'project', 'output', 'Vid_nen', 'vid_meme', 'img_meme', 'mp3_meme'):
             (self.data / name).mkdir()
         for module in (core, render, app):
             mocked = patch.object(module, 'DATA', self.data)
@@ -137,7 +137,7 @@ class ProjectMediaTests(unittest.TestCase):
         folder = self.data / 'jobs' / core.uid()
         folder.mkdir()
         with patch('render.synthesize') as speech:
-            with self.assertRaisesRegex(ValueError, 'cùng tên'):
+            with self.assertRaisesRegex(ValueError, 'Tiếng Meme đang trống'):
                 render.render(self.with_screenshots(project), folder, lambda *_: None, lambda: False)
             speech.assert_not_called()
 
@@ -283,7 +283,7 @@ class ProjectMediaTests(unittest.TestCase):
         folder = self.data / 'jobs' / core.uid()
         folder.mkdir()
         with patch('render.synthesize') as speech:
-            with self.assertRaisesRegex(ValueError, 'cùng tên'):
+            with self.assertRaisesRegex(ValueError, 'Tiếng Meme đang trống'):
                 render.render(self.with_screenshots(project), folder, lambda *_: None, lambda: False)
             speech.assert_not_called()
 
@@ -394,7 +394,7 @@ class ProjectMediaTests(unittest.TestCase):
         self.assertEqual([(call.args[0],call.args[1].voice) for call in speech.call_args_list],
                          [('Intro','voice1'),('One','voice4'),('Two','voice4'),('Three','voice2'),('Four','voice1')])
         self.assertEqual(len([name for name in files if name.endswith('.mp4')]),3)
-        self.assertEqual(project.options.voice,'vi-VN-HoaiMyNeural')
+        self.assertEqual(project.options.voice,'')
         scenes=core.read(folder/'timeline.json')['scenes']
         self.assertFalse(any(scene['kind']=='meme' for scene in scenes))
         self.assertFalse((core.project_folder(project)/'meme_state.json').exists())
@@ -404,7 +404,7 @@ class ProjectMediaTests(unittest.TestCase):
         photo=self.data/'img_meme'/'1.png'
         sound=self.data/'mp3_meme'/'1.wav'
         photo_bytes=photo.read_bytes();sound_bytes=sound.read_bytes()
-        for use_image,use_sound in ((True,True),(True,False),(False,True),(False,False)):
+        for use_image,use_sound in ((True,True),(False,True),(False,False)):
             with self.subTest(image=use_image,sound=use_sound):
                 if use_image:photo.write_bytes(photo_bytes)
                 else:photo.unlink(missing_ok=True)
@@ -482,7 +482,7 @@ class ProjectMediaTests(unittest.TestCase):
             voice=self.data/'voice.wav'
             self.wav(voice,.1)
             with patch('app.synthesize',return_value=voice):
-                response=client.post('/api/voice-preview',json={})
+                response=client.post('/api/voice-preview',json={'use_saved_voices':False})
             self.assertEqual(response.status_code,200)
             self.assertEqual(response.content[:4],b'RIFF')
 

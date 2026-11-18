@@ -1,6 +1,6 @@
 """Pillow scene cards and FFmpeg timeline renderer."""
-import math
 import hashlib
+import math
 import random
 import shutil
 import subprocess
@@ -9,7 +9,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from core import DATA, ROOT, asset, assets, duration, executable, uid, write, read, project_folder, snapshot_project, video_title, script_groups, require_screenshots
+from core import (
+    DATA, ROOT, asset, assets, duration, executable, probe, uid, write, read,
+    project_folder, snapshot_project, video_title, script_groups,
+    require_screenshots, validate_meme_selection,
+)
 from speech import synthesize, narration_options, has_spoken_text
 
 
@@ -18,7 +22,8 @@ def font(size, bold=False):
                   Path('C:/Windows/Fonts/arialbd.ttf' if bold else 'C:/Windows/Fonts/arial.ttf'),
                   Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')]
     for path in candidates:
-        if path.exists(): return ImageFont.truetype(str(path), size)
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
     return ImageFont.load_default(size=size)
 
 
@@ -49,7 +54,7 @@ def credit_image(options):
             break
         face = font(face.size - 1, True)
     image = Image.new('RGBA', (box[2] - box[0] + 2, box[3] - box[1] + 2))
-    ImageDraw.Draw(image).text((1-box[0], 1-box[1]), text, font=face, fill='#fff000',
+    ImageDraw.Draw(image).text((1 - box[0], 1 - box[1]), text, font=face, fill='#fff000',
                                stroke_width=stroke, stroke_fill='#111111')
     return image
 
@@ -64,7 +69,6 @@ def credit_position(width, height, image_width, image_height, seconds):
 
 def credit_filter(width, seconds):
     # Each scene continues the same curve at its start time within the output video.
-    # Sinusoidal motion has no position jumps or abrupt turns at the frame edges.
     margin = max(4, round(width * .03))
     t = f'(t+{seconds:.9f})'
     x = f'{margin}+(main_w-overlay_w-2*{margin})*(0.5+0.5*sin(2*PI*{t}/18))'
@@ -90,8 +94,10 @@ def run(args, folder, cancelled, timeout=900):
         start = time.monotonic()
         while process.poll() is None:
             if cancelled() or time.monotonic() - start > timeout:
-                process.kill(); process.wait()
-                if cancelled(): raise InterruptedError('Đã hủy dựng video')
+                process.kill()
+                process.wait()
+                if cancelled():
+                    raise InterruptedError('Đã hủy dựng video')
                 raise ValueError('FFmpeg vượt thời gian xử lý. Thử độ phân giải thấp hơn.')
             time.sleep(.15)
         if process.returncode:
@@ -100,7 +106,7 @@ def run(args, folder, cancelled, timeout=900):
 
 def stamp(seconds):
     milliseconds = round(seconds * 1000)
-    return f'{milliseconds//3600000:02}:{milliseconds//60000%60:02}:{milliseconds//1000%60:02},{milliseconds%1000:03}'
+    return f'{milliseconds // 3600000:02}:{milliseconds // 60000 % 60:02}:{milliseconds // 1000 % 60:02},{milliseconds % 1000:03}'
 
 
 def render(project, folder, progress, cancelled):
@@ -112,7 +118,8 @@ def render(project, folder, progress, cancelled):
         files = render_project(project, work, progress, cancelled, home)
     finally:
         for name in ('ffmpeg.log', 'timeline.json'):
-            if (work / name).exists(): shutil.copy2(work / name, folder / name)
+            if (work / name).exists():
+                shutil.copy2(work / name, folder / name)
     for name in files:
         if not name.endswith('.mp4') and name != 'timeline.json':
             shutil.copy2(work / name, folder / name)
@@ -121,62 +128,134 @@ def render(project, folder, progress, cancelled):
 
 def render_project(project, folder, progress, cancelled, home):
     options = project.options
+    validate_meme_selection(options)
     require_screenshots(project)
     groups = script_groups(project.comments, options)
     narration_options(options)
-    backgrounds = [a for a in assets() if a.get('source_folder') == 'Vid_nen']
+
+    all_assets = assets()
+    backgrounds = [a for a in all_assets if a.get('kind') == 'background']
     if not options.background and not backgrounds:
-        raise ValueError('Thêm ít nhất một video nền vào data/Vid_nen.')
+        raise ValueError('Chưa có video nền trong thư mục Video nền đã chọn.')
     background_id = options.background or random.choice(backgrounds)['id']
     background = asset(background_id, 'background')
+
     selected = [c for c in project.comments if c.selected]
-    if not selected: raise ValueError('Chọn ít nhất một bình luận.')
+    if not selected:
+        raise ValueError('Chọn ít nhất một bình luận.')
+
     entries = []
     if options.read_post and (project.post.strip() or project.post_image):
         entries.append({'text': project.post, 'speech': project.post, 'author': project.author or 'Bài viết',
                         'likes': 0, 'image': project.post_image, 'meme': '', 'sound': '', 'meme_seconds': 0})
     entries.extend(c.model_dump() for c in selected)
-    # Memes belong only between comments within the same output video.
-    images = [a for a in assets() if a.get('source_folder') == 'img_meme']
-    sounds = [a for a in assets() if a.get('source_folder') == 'mp3_meme']
-    parts, current, current_length = [], [], 0
-    use_meme = options.use_meme_image or options.use_meme_sound
-    pool = images if options.use_meme_image else sounds
-    meme_cache, decks = {}, {}
-    def meme_sound(item):
-        if not options.use_meme_sound:
-            return None
-        matches = [a for a in sounds if Path(a['file']).stem.casefold() == Path(item['file']).stem.casefold()]
-        if len(matches) != 1:
-            raise ValueError(f"Meme {item['name']} cần đúng một âm thanh cùng tên trong data/mp3_meme.")
-        return asset(matches[0]['id'], 'sound')
+
+    # Build combined random meme pool across Video Memes, Image+Sound Memes, or Sound-only Memes.
+    meme_videos = [a for a in all_assets if a.get('kind') == 'meme_video']
+    images = [a for a in all_assets if a.get('kind') == 'image']
+    sounds = [a for a in all_assets if a.get('kind') == 'sound']
+
+    use_meme = options.use_meme_video or options.use_meme_image or options.use_meme_sound
+    meme_candidates = []
+    if options.use_meme_video:
+        if not meme_videos:
+            raise ValueError('Đang bật Video Meme nhưng thư mục Video Meme chưa có tệp video hợp lệ.')
+        meme_candidates.extend({'meme_type': 'video', 'item': v} for v in meme_videos)
+    if options.use_meme_image:
+        if not images:
+            raise ValueError('Đang bật Ảnh Meme nhưng thư mục Ảnh Meme đang trống.')
+        if not sounds:
+            raise ValueError('Đang bật Ảnh Meme nhưng thư mục Tiếng Meme đang trống.')
+        meme_candidates.extend({'meme_type': 'image_sound', 'item': img} for img in images)
+    elif options.use_meme_sound:
+        if not sounds:
+            raise ValueError('Đang bật Tiếng Meme nhưng thư mục Tiếng Meme đang trống.')
+        meme_candidates.extend({'meme_type': 'sound_only', 'item': s} for s in sounds)
+
+    meme_cache, decks, fallback_sound_decks, video_meta_cache = {}, {}, {}, {}
+
+    def inspect_meme_video(vpath: Path):
+        key = str(vpath)
+        if key not in video_meta_cache:
+            info = probe(vpath)
+            streams = info.get('streams', [])
+            if not any(s.get('codec_type') == 'video' for s in streams):
+                raise ValueError(f'Video meme "{vpath.name}" không có luồng hình ảnh hợp lệ.')
+            has_audio = any(s.get('codec_type') == 'audio' for s in streams)
+            raw_dur = float(info.get('format', {}).get('duration') or 2.0)
+            secs = math.ceil(max(0.5, min(raw_dur, 15.0)) * 30) / 30
+            video_meta_cache[key] = (secs, has_audio)
+        return video_meta_cache[key]
+
+    def pick_sound_for_image(img_item, part):
+        stem = Path(img_item['file']).stem.casefold()
+        matches = [s for s in sounds if Path(s['file']).stem.casefold() == stem]
+        if matches:
+            chosen = matches[0]
+        else:
+            sdeck = fallback_sound_decks.setdefault(part, [])
+            if not sdeck:
+                sdeck.extend(sounds)
+                random.shuffle(sdeck)
+            chosen = sdeck.pop()
+        return asset(chosen['id'], 'sound')
 
     def next_meme(index, part):
         key = (part, index)
         if key in meme_cache:
             return meme_cache[key]
-        if not pool:
-            raise ValueError('Thêm ảnh meme vào data/img_meme.' if options.use_meme_image else 'Thêm âm thanh meme vào data/mp3_meme.')
+        if not meme_candidates:
+            raise ValueError('Chưa có tệp meme trong thư mục đã chọn.')
         deck = decks.setdefault(part, [])
         if not deck:
-            deck.extend(pool)
+            deck.extend(meme_candidates)
             random.shuffle(deck)
-        item = deck.pop()
-        sound = meme_sound(item)
-        picture = folder / f'meme-{part:03}-{index:03}.png'
-        if options.use_meme_image:
+        picked = deck.pop()
+        mtype = picked['meme_type']
+        item = picked['item']
+
+        if mtype == 'video':
+            vpath = asset(item['id'], 'meme_video')
+            secs, has_audio = inspect_meme_video(vpath)
+            meme_cache[key] = {
+                'kind': 'meme',
+                'meme_type': 'video',
+                'seconds': secs,
+                'video': str(vpath),
+                'has_audio': has_audio,
+                'picture': '',
+                'audio': str(vpath) if has_audio else '',
+                'volume': options.meme_volume,
+                'meme_name': item['name'],
+            }
+        elif mtype == 'image_sound':
+            sound = pick_sound_for_image(item, part)
+            picture = folder / f'meme-{part:03}-{index:03}.png'
             meme_card(asset(item['id'], 'image'), options, picture)
+            meme_cache[key] = {
+                'kind': 'meme',
+                'meme_type': 'image_sound',
+                'seconds': 2.0,
+                'picture': picture.name,
+                'audio': str(sound),
+                'volume': options.meme_volume,
+                'meme_name': item['name'],
+            }
         else:
+            sound = asset(item['id'], 'sound')
+            picture = folder / f'meme-{part:03}-{index:03}.png'
             Image.new('RGBA', (options.resolution, options.resolution * 16 // 9)).save(picture)
-        meme_cache[key] = {'kind': 'meme', 'seconds': 2.0, 'picture': picture.name,
-                'audio': str(sound) if sound else '', 'volume': options.meme_volume, 'meme_name': item['name']}
+            meme_cache[key] = {
+                'kind': 'meme',
+                'meme_type': 'sound_only',
+                'seconds': 2.0,
+                'picture': picture.name,
+                'audio': str(sound),
+                'volume': options.meme_volume,
+                'meme_name': item['name'],
+            }
         return meme_cache[key]
-    if options.split_mode != 'duration' and use_meme and any(
-            len(group) - 1 + int(options.read_post and bool(project.post.strip() or project.post_image)) for group in groups):
-        if not pool:
-            raise ValueError('Thêm ảnh meme vào data/img_meme.' if options.use_meme_image else 'Thêm âm thanh meme vào data/mp3_meme.')
-        for item in pool:
-            meme_sound(item)  # Validate name pairs before spending time on TTS.
+
     prepared = {}
     intro_count = int(options.read_post and bool(project.post.strip() or project.post_image))
     audio_cache = home / 'audio' / 'prepared'
@@ -188,11 +267,13 @@ def render_project(project, folder, progress, cancelled, home):
     def prepare(i):
         if i in prepared:
             return prepared[i].copy()
-        if cancelled(): raise InterruptedError('Đã hủy')
+        if cancelled():
+            raise InterruptedError('Đã hủy')
         entry = entries[i]
-        progress(stage_progress, f'Chuẩn bị nội dung {i+1}/{len(entries)}')
+        progress(stage_progress, f'Chuẩn bị nội dung {i + 1}/{len(entries)}')
         speech_text = (entry.get('speech') or entry.get('capture_text') or entry['text']).strip()
-        if not has_spoken_text(speech_text): speech_text = ''
+        if not has_spoken_text(speech_text):
+            speech_text = ''
         audio, selected_voice, seconds = None, '', 3.0
         if speech_text:
             is_intro = intro_count and i == 0
@@ -200,7 +281,6 @@ def render_project(project, folder, progress, cancelled, home):
             if options.provider == 'elevenlabs' and any(options.elevenlabs_voices):
                 voice_id = options.elevenlabs_voices[0] if is_intro else random.choice(options.elevenlabs_voices)
                 selected_options = options.model_copy(update={'voice': voice_id})
-            # synthesize reuses the existing, provider/voice/text-specific local MP3 cache.
             speech = synthesize(speech_text, selected_options, cancelled)
             selected_voice = selected_options.voice if options.provider == 'elevenlabs' and any(options.elevenlabs_voices) else ''
             signature = hashlib.sha256(speech.read_bytes() + f':{options.speed}:loudnorm-v1'.encode()).hexdigest()
@@ -214,7 +294,7 @@ def render_project(project, folder, progress, cancelled, home):
             shutil.copy2(cached_audio, audio)
             seconds = math.ceil((duration(audio) + .28) * 30) / 30
         if seconds > options.max_seconds:
-            raise ValueError(f'Bình luận {i+1} dài hơn giới hạn mỗi phần. Chia bình luận hoặc tăng thời lượng.')
+            raise ValueError(f'Bình luận {i + 1} dài hơn giới hạn mỗi phần. Chia bình luận hoặc tăng thời lượng.')
         picture = folder / f'card-{i:03}.png'
         source = asset(entry['image'], 'image')
         signature = hashlib.sha256(source.read_bytes() + f':{options.resolution}:{options.card_y}:card-v1'.encode()).hexdigest()
@@ -234,21 +314,23 @@ def render_project(project, folder, progress, cancelled, home):
             number = 0
             for i in range(intro_count, len(entries)):
                 scene = prepare(i)
-                added = scene['seconds'] + (2 if current and use_meme else 0)
+                candidate_meme = next_meme(used_memes, number) if (current and use_meme) else None
+                added = scene['seconds'] + (candidate_meme['seconds'] if candidate_meme else 0)
                 if current and length + added > options.max_seconds:
                     if number == 0 and len(current) == intro_count:
                         raise ValueError('Mở đầu, meme và bình luận đầu vượt giới hạn. Tăng giới hạn thời lượng.')
                     yield current
                     number += 1
                     current, length = [], 0
-                if current and use_meme:
-                    between = next_meme(used_memes, number)
-                    current.append(between)
-                    length += between['seconds']
+                    candidate_meme = None
+                if current and candidate_meme is not None:
+                    current.append(candidate_meme)
+                    length += candidate_meme['seconds']
                     used_memes += 1
                 current.append(scene)
                 length += scene['seconds']
-            if current: yield current
+            if current:
+                yield current
         else:
             offset = intro_count
             for number, group in enumerate(groups):
@@ -261,7 +343,7 @@ def render_project(project, folder, progress, cancelled, home):
                     current.append(scene)
                 seconds = sum(scene['seconds'] for scene in current)
                 if seconds > options.max_seconds:
-                    raise ValueError(f'Video {number+1} cần {seconds:.1f} giây, vượt giới hạn {options.max_seconds} giây. '
+                    raise ValueError(f'Video {number + 1} cần {seconds:.1f} giây, vượt giới hạn {options.max_seconds} giây. '
                                      'Tăng giới hạn mỗi phần hoặc đổi cách chia kịch bản.')
                 yield current
                 offset += len(group)
@@ -269,6 +351,9 @@ def render_project(project, folder, progress, cancelled, home):
     w, h = options.resolution, options.resolution * 16 // 9
     # Use even dimensions at every preset for yuv420p.
     h -= h % 2
+    box_w = int(w * .6) - (int(w * .6) % 2)
+    box_h = int(h * .6) - (int(h * .6) % 2)
+
     watermark = credit_image(options)
     credit_args = []
     if watermark is not None:
@@ -285,37 +370,72 @@ def render_project(project, folder, progress, cancelled, home):
         base = f'{title} ({version})'
 
     def checkpoint():
-        portable = [{**scene, 'audio': Path(scene['audio']).name if scene['audio'] else ''} for scene in timeline]
+        portable = [
+            {
+                **scene,
+                'audio': Path(scene['audio']).name if scene.get('audio') else '',
+                'video': Path(scene['video']).name if scene.get('video') else '',
+            }
+            for scene in timeline
+        ]
         write(folder / 'timeline.json', {'project': project.model_dump(), 'background_id': background_id,
               'duration': elapsed, 'scenes': portable, 'files': files, 'output_project': home.name})
         job_folder = DATA / 'jobs' / folder.name
         if job_folder.is_dir():
             shutil.copy2(folder / 'timeline.json', job_folder / 'timeline.json')
             for name in files:
-                if name.endswith('.srt'): shutil.copy2(folder / name, job_folder / name)
+                if name.endswith('.srt'):
+                    shutil.copy2(folder / name, job_folder / name)
 
     for number, part in enumerate(generate_parts(), 1):
-        progress(min(95, 5 + int(85 * (number-1) / max(1, len(groups)))), f'Video {number}: dựng và ghép cảnh')
+        progress(min(95, 5 + int(85 * (number - 1) / max(1, len(groups)))), f'Video {number}: dựng và ghép cảnh')
         start = 0
         for scene in part:
-            if cancelled(): raise InterruptedError('Đã hủy')
+            if cancelled():
+                raise InterruptedError('Đã hủy')
             scene.update(part=number, start=start)
             start += scene['seconds']
             i = scene_index
             length = scene['seconds']
-            audio_path = scene['audio']
-            if audio_path and not Path(audio_path).is_absolute(): audio_path = str(folder / audio_path)
-            audio_args = ['-i', audio_path] if audio_path else ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
             output = folder / f'scene-{i:03}.mp4'
-            video_filter = (f'[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},'
-                  f'setsar=1,fps=30[bg];[bg][1:v]overlay=0:0:format=auto[base];')
-            video_filter += credit_filter(w, scene['start']) if watermark is not None else '[base]format=yuv420p[v];'
-            vf = video_filter + (f'[2:a]volume={scene.get("volume", 1)},apad,atrim=duration={length},asetpts=PTS-STARTPTS[a]')
-            run(['-stream_loop', '-1', '-ss', f'{elapsed:.3f}', '-i', background,
-                 '-loop', '1', '-i', folder / scene['picture'], *audio_args, *credit_args,
-                 '-filter_complex', vf, '-map', '[v]', '-map', '[a]', '-t', f'{length:.6f}',
-                 '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-threads', '2',
-                 '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-video_track_timescale', '15360', output], folder, cancelled)
+
+            if scene.get('meme_type') == 'video':
+                v_input = scene['video']
+                audio_args = ['-i', v_input] if scene.get('has_audio') else ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
+                video_filter = (
+                    f'[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps=30[bg];'
+                    f'[1:v]scale={box_w}:{box_h}:force_original_aspect_ratio=decrease,setsar=1,fps=30[mv];'
+                    f"[bg][mv]overlay=x='(main_w-overlay_w)/2':y='round(main_h*0.45-overlay_h/2)':eof_action=pass:format=auto[base];"
+                )
+                video_filter += credit_filter(w, scene['start']) if watermark is not None else '[base]format=yuv420p[v];'
+                vf = video_filter + (
+                    f'[2:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,'
+                    f'volume={scene.get("volume", 1)},apad,atrim=duration={length},asetpts=PTS-STARTPTS[a]'
+                )
+                run([
+                    '-stream_loop', '-1', '-ss', f'{elapsed:.3f}', '-i', background,
+                    '-i', v_input, *audio_args, *credit_args,
+                    '-filter_complex', vf, '-map', '[v]', '-map', '[a]', '-t', f'{length:.6f}',
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-threads', '2',
+                    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-video_track_timescale', '15360', output,
+                ], folder, cancelled)
+            else:
+                audio_path = scene['audio']
+                if audio_path and not Path(audio_path).is_absolute():
+                    audio_path = str(folder / audio_path)
+                audio_args = ['-i', audio_path] if audio_path else ['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo']
+                video_filter = (f'[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},'
+                                f'setsar=1,fps=30[bg];[bg][1:v]overlay=0:0:format=auto[base];')
+                video_filter += credit_filter(w, scene['start']) if watermark is not None else '[base]format=yuv420p[v];'
+                vf = video_filter + (f'[2:a]volume={scene.get("volume", 1)},apad,atrim=duration={length},asetpts=PTS-STARTPTS[a]')
+                run([
+                    '-stream_loop', '-1', '-ss', f'{elapsed:.3f}', '-i', background,
+                    '-loop', '1', '-i', folder / scene['picture'], *audio_args, *credit_args,
+                    '-filter_complex', vf, '-map', '[v]', '-map', '[a]', '-t', f'{length:.6f}',
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-threads', '2',
+                    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-video_track_timescale', '15360', output,
+                ], folder, cancelled)
+
             scene['file'] = output.name
             elapsed += length
             scene_index += 1
@@ -325,13 +445,14 @@ def render_project(project, folder, progress, cancelled, home):
         target = output_folder / f'{base}{suffix}.mp4'
         temporary = folder / f'export-{number:02}.mp4'
         run(['-f', 'concat', '-safe', '1', '-i', listing, '-c', 'copy', '-movflags', '+faststart', temporary], folder, cancelled)
-        if cancelled(): raise InterruptedError('Đã hủy')
+        if cancelled():
+            raise InterruptedError('Đã hủy')
         temporary.replace(target)
         subtitle = folder / f'video-{number:02}.srt'
         chunks = []
         for scene in part:
             if scene['kind'] == 'comment' and scene['text']:
-                chunks.append(f"{len(chunks)+1}\n{stamp(scene['start'])} --> {stamp(scene['start']+scene['seconds'])}\n{scene['text']}\n")
+                chunks.append(f"{len(chunks) + 1}\n{stamp(scene['start'])} --> {stamp(scene['start'] + scene['seconds'])}\n{scene['text']}\n")
         subtitle.write_text('\n'.join(chunks), 'utf-8')
         files.extend([target.name, subtitle.name])
         timeline.extend(part)

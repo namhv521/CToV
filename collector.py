@@ -1,5 +1,6 @@
 """Bounded public collection. Uses a separate profile; no CAPTCHA bypass."""
 import asyncio
+import sys
 import re
 import time
 from urllib.parse import urlsplit
@@ -137,6 +138,10 @@ async def configure_capture_zoom(context):
     })();""")
 
 
+def browser_options():
+    return {'channel': 'chromium' if getattr(sys, 'frozen', False) else 'chrome'}
+
+
 async def collect(url, limit=30, headless=True, progress=None):
     from playwright.async_api import Error as PlaywrightError, async_playwright
     if not 1 <= limit <= 120:
@@ -149,11 +154,11 @@ async def collect(url, limit=30, headless=True, progress=None):
     scanned_keys = set()
     async with async_playwright() as p:
         try:
-            context = await p.chromium.launch_persistent_context(str(DATA / 'profile'), channel='chrome',
+            context = await p.chromium.launch_persistent_context(str(DATA / 'profile'), **browser_options(),
                        headless=headless, viewport={'width': 1280, 'height': 1000},
                        device_scale_factor=2, color_scheme='light', accept_downloads=False)
         except Exception:
-            raise ValueError('Không mở được Chrome hoặc profile đang được dùng. Đóng cửa sổ Đăng nhập nguồn rồi thử lại.') from None
+            raise ValueError('Không mở được trình duyệt hoặc hồ sơ đăng nhập đang được dùng. Đóng cửa sổ Đăng nhập nguồn rồi thử lại.') from None
         try:
             await configure_capture_zoom(context)
             page = await context.new_page()
@@ -325,7 +330,7 @@ async def collect(url, limit=30, headless=True, progress=None):
 async def login(platform):
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(str(DATA / 'profile'), channel='chrome', headless=False)
+        context = await p.chromium.launch_persistent_context(str(DATA / 'profile'), **browser_options(), headless=False)
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto('https://www.tiktok.com/login' if platform == 'tiktok' else 'https://www.threads.com/login')
         # Keep this explicit login window available until the user closes it.

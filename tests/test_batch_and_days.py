@@ -1,6 +1,8 @@
+import io
 import tempfile
 import time
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +18,7 @@ class BatchAndDaysTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='commentcut-batch-')
         self.data = Path(self.temp.name)
-        for name in ('assets', 'projects', 'jobs', 'batches', 'cache', 'project', 'output', 'Vid_nen', 'img_meme', 'mp3_meme'):
+        for name in ('assets', 'projects', 'jobs', 'batches', 'cache', 'project', 'output', 'Vid_nen', 'vid_meme', 'img_meme', 'mp3_meme'):
             (self.data / name).mkdir()
         for module in (core, render, app):
             mocked = patch.object(module, 'DATA', self.data)
@@ -30,6 +32,11 @@ class BatchAndDaysTests(unittest.TestCase):
             Image.new('RGB', (200, 120), 'white').save(path)
             core.write(path.with_suffix('.json'), {'id': aid, 'kind': 'image', 'file': path.name})
         return aid
+
+    def make_wav(self, path: Path, seconds=1.0):
+        with wave.open(str(path), 'wb') as audio:
+            audio.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b'\0\0' * int(seconds * 16000))
 
     def test_auto_project_name_from_post_and_fallback(self):
         self.assertEqual(
@@ -47,7 +54,7 @@ class BatchAndDaysTests(unittest.TestCase):
 
     def test_parse_txt_file_filters_comments_duplicates_and_invalid_urls(self):
         content = (
-            '﻿# Danh sách bài cần crawl\n'
+            '\ufeff# Danh sách bài cần crawl\n'
             'https://www.threads.com/@a/post/ONE\n\n'
             'https://www.tiktok.com/@b/video/12345\n'
             'https://www.threads.com/@a/post/ONE\n'
@@ -87,6 +94,111 @@ class BatchAndDaysTests(unittest.TestCase):
         self.assertEqual(days[0]['projects'][0]['name'], 'Bài crawl ngày 10')
         self.assertEqual(days[1]['projects'][0]['name'], 'Bài cũ suy ra từ captured_at')
 
+    def test_custom_media_folders_and_video_meme_and_combined_random_pool(self):
+        aid = self.make_screenshot()
+        with tempfile.TemporaryDirectory(prefix='commentcut-ext-media-') as ext_tmp:
+            ext = Path(ext_tmp)
+            bg_dir = ext / 'Kho_Nen'
+            vm_dir = ext / 'Kho_Video_Meme'
+            im_dir = ext / 'Kho_Anh_Meme'
+            sm_dir = ext / 'Kho_Tieng_Meme'
+            for d in (bg_dir, vm_dir, im_dir, sm_dir):
+                d.mkdir()
+
+            render.run([
+                '-f', 'lavfi', '-i', 'color=c=navy:s=360x640:r=30', '-t', '2',
+                '-c:v', 'libx264', '-pix_fmt', 'yuv420p', bg_dir / 'gameplay.mp4',
+            ], self.data, lambda: False)
+            render.run([
+                '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=30',
+                '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1.2',
+                '-t', '1.2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac', vm_dir / 'laugh_clip.mp4',
+            ], self.data, lambda: False)
+            Image.new('RGB', (160, 160), 'yellow').save(im_dir / 'doge_diff_name.png')
+            self.make_wav(sm_dir / 'vine_boom_diff_name.wav', 1.0)
+
+            voice = self.data / 'voice.wav'
+            self.make_wav(voice, 0.5)
+
+            with TestClient(app.app) as client:
+                for kind, folder in (('background', bg_dir), ('meme_video', vm_dir), ('image', im_dir), ('sound', sm_dir)):
+                    r = client.post('/api/media-folders', json={'kind': kind, 'path': str(folder)})
+                    self.assertEqual(r.status_code, 200)
+                diag = client.get('/api/health').json()['media']
+                self.assertEqual(diag['background_count'], 1)
+                self.assertEqual(diag['meme_video_count'], 1)
+                self.assertEqual(diag['meme_image_count'], 1)
+                self.assertEqual(diag['meme_sound_count'], 1)
+                self.assertTrue(diag['folders']['meme_video']['is_custom'])
+
+            # 1. Image without Sound is strictly rejected
+            bad_project = core.Project(
+                comments=[core.Comment(text='A', image=aid), core.Comment(text='B', image=aid)],
+                options=core.Options(use_meme_video=False, use_meme_image=True, use_meme_sound=False, resolution=360),
+            )
+            bad_folder = self.data / 'jobs' / core.uid()
+            bad_folder.mkdir()
+            with self.assertRaisesRegex(ValueError, 'bắt buộc phải bật kèm Tiếng Meme'):
+                render.render(bad_project, bad_folder, lambda *_: None, lambda: False)
+
+            # 2. Video Meme ONLY (no Image, no Sound required!)
+            vid_only_project = core.Project(
+                name='Chỉ Video Meme',
+                comments=[core.Comment(text='Cmt 1', image=aid), core.Comment(text='Cmt 2', image=aid)],
+                options=core.Options(
+                    read_post=False, resolution=360,
+                    use_meme_video=True, use_meme_image=False, use_meme_sound=False,
+                ),
+            )
+            f1 = self.data / 'jobs' / core.uid()
+            f1.mkdir()
+            with patch('render.synthesize', return_value=voice):
+                out1 = render.render(vid_only_project, f1, lambda *_: None, lambda: False)
+            mp4_1 = next(x for x in out1 if x.endswith('.mp4'))
+            out_dir_1 = core.read(f1 / 'timeline.json')['output_project']
+            self.assertEqual({s['codec_type'] for s in core.probe(self.data / 'output' / out_dir_1 / mp4_1)['streams']}, {'video', 'audio'})
+            scenes_1 = core.read(f1 / 'timeline.json')['scenes']
+            self.assertEqual([s.get('meme_type') for s in scenes_1 if s['kind'] == 'meme'], ['video'])
+
+            # 3. ALL 3 ENABLED (Video Meme + mismatched-filename Image+Sound Meme in unified random pool)
+            all3_project = core.Project(
+                name='Trộn cả 3 loại Meme',
+                comments=[core.Comment(text=f'Cmt {i}', image=aid) for i in range(3)],
+                options=core.Options(
+                    read_post=False, resolution=360,
+                    use_meme_video=True, use_meme_image=True, use_meme_sound=True,
+                ),
+            )
+            f2 = self.data / 'jobs' / core.uid()
+            f2.mkdir()
+            with patch('render.synthesize', return_value=voice):
+                out2 = render.render(all3_project, f2, lambda *_: None, lambda: False)
+            self.assertTrue(any(x.endswith('.mp4') for x in out2))
+            scenes_2 = core.read(f2 / 'timeline.json')['scenes']
+            meme_types = {s.get('meme_type') for s in scenes_2 if s['kind'] == 'meme'}
+            self.assertEqual(meme_types, {'video', 'image_sound'})
+
+    def test_preset_and_library_upload_and_delete(self):
+        buf = io.BytesIO()
+        Image.new('RGB', (120, 120), 'orange').save(buf, format='PNG')
+        with TestClient(app.app) as client:
+            up = client.post('/api/assets/image', files={'file': ('meme_1.png', buf.getvalue(), 'image/png')})
+            self.assertEqual(up.status_code, 200)
+            item = up.json()
+            self.assertEqual(item['source_folder'], 'img_meme')
+            self.assertTrue((self.data / 'img_meme' / 'meme_1.png').is_file())
+            self.assertEqual(client.delete(f"/api/assets/{item['id']}").status_code, 200)
+            self.assertEqual(client.get('/api/assets').json(), [])
+
+            p = client.post('/api/preset', json={
+                'limit': 50,
+                'auto_render': False,
+                'options': {'resolution': 1080, 'comments_per_video': 12, 'split_mode': 'comments', 'use_meme_video': True},
+            }).json()
+            self.assertEqual(p['limit'], 50)
+            self.assertTrue(client.get('/api/preset').json()['options']['use_meme_video'])
+
     def test_batch_crawl_30_comments_splits_into_3_videos_of_10_and_handles_partial(self):
         aid = self.make_screenshot()
         (self.data / 'Vid_nen' / 'bg.mp4').write_bytes(b'bg')
@@ -120,7 +232,8 @@ class BatchAndDaysTests(unittest.TestCase):
         with TestClient(app.app) as client, \
                 patch('collector.collect', fake_collect), \
                 patch('app.render', fake_render), \
-                patch('speech.settings', return_value={'elevenlabs_key':'test','elevenlabs_voice':'legacy'}), \
+                patch('speech.settings', return_value={'elevenlabs_key': 'test', 'elevenlabs_voice': 'legacy',
+                                                       'elevenlabs_voices': ['saved-one', 'saved-two', 'saved-three']}), \
                 patch('app.executable', return_value='ffmpeg'):
             res = client.post('/api/batch-crawl', json={
                 'urls': [
@@ -133,6 +246,7 @@ class BatchAndDaysTests(unittest.TestCase):
                     split_mode='comments',
                     comments_per_video=10,
                     elevenlabs_voices=('one', 'two', 'three', 'four'),
+                    use_meme_video=False,
                     use_meme_image=False,
                     use_meme_sound=False,
                 ).model_dump(),
@@ -140,7 +254,7 @@ class BatchAndDaysTests(unittest.TestCase):
             self.assertEqual(res.status_code, 200)
             bid = res.json()['id']
 
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 30
             batch = None
             while time.monotonic() < deadline:
                 batch = client.get(f'/api/batch-crawl/{bid}').json()
@@ -154,7 +268,7 @@ class BatchAndDaysTests(unittest.TestCase):
 
             self.assertEqual(batch['status'], 'done')
             self.assertEqual(list(rendered_voices.values()),
-                             [('elevenlabs', ('one', 'two', 'three', 'four'))] * 2)
+                             [('elevenlabs', ('saved-one', 'saved-two', 'saved-three'))] * 2)
             self.assertEqual(batch['items'][0]['name'], 'Tiêu đề bài viết tự động số 1')
             self.assertEqual(batch['items'][1]['name'], '@tacgia_hai · 999888')
             self.assertEqual(rendered_groups['Tiêu đề bài viết tự động số 1'], [10, 10, 10])

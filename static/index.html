@@ -1,78 +1,553 @@
 <!doctype html>
-<html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CommentCut — Xưởng video bình luận</title><link rel="stylesheet" href="/static/style.css?v=batch-daily-v1"><script src="/static/app.js?v=batch-elevenlabs-v1" defer></script></head>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CommentCut Studio — Sản xuất video bình luận hàng loạt</title>
+  <link rel="stylesheet" href="/static/style.css?v=desktop-studio-v2">
+  <script src="/static/app.js?v=desktop-studio-v2" defer></script>
+</head>
 <body>
-<aside class="sidebar"><a class="brand" href="/" aria-label="CommentCut trang chủ"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 5h22v17H15l-7 6v-6H5z" fill="currentColor"/><path d="m13 10 8 4-8 4z" fill="var(--paper)"/></svg><span>commentcut<span class="brand-dot">.</span></span></a><p class="sidebar-caption">Xưởng video của bạn</p><nav aria-label="Điều hướng"><button class="nav active" data-view="editor">Biên tập &amp; Crawl</button><button class="nav" data-view="days">Theo ngày crawl <span id="day-count">0</span></button><button class="nav" data-view="library">Thư viện media <span id="asset-count">0</span></button><button class="nav" data-view="exports">Video đã dựng</button><button class="nav" data-view="settings">Giọng đọc &amp; API</button></nav><div class="sidebar-bottom"><span class="local-dot"></span> Chạy trên máy của bạn<p>Media lưu cục bộ.<br>Giọng đọc cần Internet.</p></div></aside>
-<main>
-<header class="topbar"><div><span class="workspace-label">Không gian làm việc</span><span class="slash">/</span><span id="current-name">Video mới</span></div><span id="health" class="status">Đang kết nối…</span></header>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <div class="brand-block">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="24" height="24">
+            <rect x="3" y="4" width="26" height="19" rx="5" fill="currentColor"/>
+            <path d="M10 23v5l6-5" fill="currentColor"/>
+            <path d="M13 9.5l8 4-8 4z" fill="#0f1117"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">CommentCut</span>
+          <span class="brand-tag">BULK STUDIO</span>
+        </div>
+      </div>
 
-<section id="view-editor" class="view">
-<div class="page-heading"><div><h1>Từ bình luận thành câu chuyện.</h1><p>Crawl đơn lẻ hoặc nạp file .txt hàng loạt, tự đặt tên và tự dựng video.</p></div><div class="actions"><button id="new-project" class="quiet">Dự án mới</button><button id="save-project" class="secondary">Lưu dự án</button></div></div>
-<div class="project-line"><label for="project-name">Tên dự án</label><input id="project-name" value="Video chưa đặt tên" maxlength="120"><label for="open-project">Mở dự án</label><select id="open-project"><option value="">Chọn dự án đã lưu</option></select></div>
-<div class="studio-grid"><div class="script-column">
-<section class="source-panel">
-<div class="section-heading"><h2>Nguồn câu chuyện</h2><div class="source-tabs" role="tablist" aria-label="Chế độ lấy nguồn"><button type="button" id="tab-single-crawl" class="tab-btn active" role="tab" aria-selected="true">1 Link đơn</button><button type="button" id="tab-batch-crawl" class="tab-btn" role="tab" aria-selected="false">File .txt hàng loạt</button></div></div>
+      <nav class="side-nav" aria-label="Các phân khu">
+        <button type="button" class="nav-btn active" data-view="studio" aria-current="page">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7M17 14l4 2.5-4 2.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Sản xuất hàng loạt</span>
+          <span id="nav-batch-badge" class="nav-pill" hidden>Chạy</span>
+        </button>
+        <button type="button" class="nav-btn" data-view="history">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>Kho video &amp; Lịch sử</span>
+          <span id="nav-history-count" class="nav-count">0</span>
+        </button>
+        <button type="button" class="nav-btn" data-view="library">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m3 15 5-4 4 3 3-2 6 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Thư viện &amp; Thư mục</span>
+          <span id="nav-library-count" class="nav-count">0</span>
+        </button>
+        <button type="button" class="nav-btn" data-view="voices">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Giọng đọc ElevenLabs</span>
+          <span id="nav-voice-count" class="nav-count">0</span>
+        </button>
+      </nav>
 
-<div id="single-crawl-pane">
-<form id="crawl-form"><label for="source-url">Link video hoặc bài viết</label><div class="input-action"><input id="source-url" type="url" placeholder="https://www.threads.com/@…/post/…" required><button id="crawl" type="submit" class="primary">Lấy bình luận</button></div><div class="source-options"><label for="crawl-limit">Tối đa</label><select id="crawl-limit"><option value="10">10</option><option value="20">20</option><option value="30" selected>30</option><option value="50">50</option><option value="100">100</option><option value="120">120</option></select><span>bình luận nhiều tim nhất đọc được</span><button type="button" id="login-tiktok" class="link-button">Đăng nhập TikTok</button><button type="button" id="login-threads" class="link-button">Đăng nhập Threads</button></div></form>
-<p id="crawl-note" class="help">Tên dự án tự đặt theo nội dung bài gốc khi đang để mặc định. Bạn luôn có thể sửa lại bên dưới.</p>
-</div>
+      <div class="sidebar-diagnostics" aria-label="Trạng thái hệ thống">
+        <div class="diag-title">Trạng thái Engine</div>
+        <div class="diag-row"><span id="dot-ffmpeg" class="dot"></span><span id="sys-ffmpeg">Đang kiểm tra FFmpeg…</span></div>
+        <div class="diag-row"><span id="dot-eleven" class="dot"></span><span id="sys-eleven">ElevenLabs chưa kiểm tra</span></div>
+        <div class="diag-row"><span id="dot-media" class="dot"></span><span id="sys-media">Kho media: 0 tệp</span></div>
+      </div>
+    </aside>
 
-<div id="batch-crawl-pane" hidden>
-<div class="batch-file-row">
-<label class="file-button secondary" for="batch-txt-file">Chọn file .txt chứa URLs</label>
-<input id="batch-txt-file" type="file" accept=".txt,text/plain" hidden>
-<span id="batch-file-info" class="help">Mỗi dòng 1 link TikTok hoặc Threads (bỏ qua dòng trống &amp; dòng #).</span>
-</div>
-<label for="batch-urls">Danh sách URLs sẽ crawl <span id="batch-url-count" class="count">0</span></label>
-<textarea id="batch-urls" rows="5" placeholder="https://www.threads.com/@user/post/ABC&#10;https://www.tiktok.com/@user/video/123456"></textarea>
+    <div class="workspace-frame">
+      <header class="topbar">
+        <div class="topbar-title-group">
+          <h1 id="topbar-title">Sản xuất hàng loạt</h1>
+          <span class="topbar-sep">·</span>
+          <span id="topbar-subtitle" class="topbar-sub">Nạp danh sách URLs → Tự động chụp bình luận thật, chia phần &amp; xuất MP4</span>
+        </div>
+        <div class="topbar-actions">
+          <span id="global-activity" class="activity-pill">Sẵn sàng</span>
+          <button type="button" id="btn-login-tiktok" class="btn btn-ghost btn-sm">Đăng nhập TikTok</button>
+          <button type="button" id="btn-login-threads" class="btn btn-ghost btn-sm">Đăng nhập Threads</button>
+          <button type="button" id="btn-open-output" class="btn btn-secondary btn-sm">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+            <span>Mở thư mục Output</span>
+          </button>
+        </div>
+      </header>
 
-<div class="batch-setup-box">
-<div class="section-heading"><h3>Cấu hình Crawl &amp; Tự động Render</h3><label class="check"><input type="checkbox" id="batch-auto-render" checked> Tự động render sau khi crawl mỗi link</label></div>
-<div class="three-col">
-<div><label for="batch-limit">Số bình luận / URL</label><input id="batch-limit" type="number" min="1" max="120" step="1" value="30"></div>
-<div><label for="batch-split-mode">Cách chia video</label><select id="batch-split-mode"><option value="comments" selected>Theo số cmt / video</option><option value="even">Chia đều thành N video</option><option value="duration">Theo thời lượng tối đa</option></select></div>
-<div id="batch-cpv-wrap"><label for="batch-comments-per-video">Số cmt / 1 video</label><input id="batch-comments-per-video" type="number" min="1" max="120" step="1" value="10"></div>
-<div id="batch-vcount-wrap" hidden><label for="batch-video-count">Số video / URL</label><input id="batch-video-count" type="number" min="1" max="120" step="1" value="3"></div>
-</div>
-<p class="help">Dựng tự động dùng <a href="#eleven-voices">giọng ElevenLabs trong cấu hình dựng</a>.</p><p id="batch-plan-hint" class="help">Mặc định: mỗi URL lấy tối đa 30 bình luận → chia 10 bình luận/video (tạo 3 video nếu đủ 30 cmt). Cấu hình Voice ID ElevenLabs, meme, nền và độ phân giải ở cột bên phải.</p>
-<div class="actions">
-<button type="button" id="start-batch" class="primary">Bắt đầu Crawl &amp; Render tự động</button>
-<button type="button" id="login-tiktok-batch" class="link-button">Đăng nhập TikTok</button>
-<button type="button" id="login-threads-batch" class="link-button">Đăng nhập Threads</button>
-</div>
-</div>
-<div id="batch-progress" aria-live="polite"></div>
-</div>
-</section>
+      <!-- VIEW 1: BULK PRODUCTION STUDIO -->
+      <main id="view-studio" class="view-pane studio-split">
+        <section class="studio-left" aria-label="Cấu hình lô sản xuất">
+          <div class="studio-scroll">
+            <!-- URL INPUT CARD -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title-wrap">
+                  <h2>1. Danh sách URL nguồn</h2>
+                  <span id="url-valid-badge" class="badge badge-accent">0 URL</span>
+                </div>
+                <div class="toolbar-inline">
+                  <label class="btn btn-secondary btn-xs file-trigger" for="batch-txt-file">Nạp .txt</label>
+                  <input id="batch-txt-file" type="file" accept=".txt,text/plain" hidden>
+                  <button type="button" id="btn-clean-urls" class="btn btn-ghost btn-xs" title="Xóa dòng trùng và dòng lỗi">Lọc sạch</button>
+                  <button type="button" id="btn-clear-urls" class="btn btn-ghost btn-xs">Xóa</button>
+                </div>
+              </div>
+              <textarea id="batch-urls" class="url-textarea" rows="5" aria-label="Danh sách URLs sẽ crawl" placeholder="Dán hàng loạt link TikTok hoặc Threads (mỗi dòng 1 URL) hoặc kéo thả tệp .txt vào đây…&#10;https://www.threads.com/@user/post/ABC&#10;https://www.tiktok.com/@user/video/123456"></textarea>
+              <p id="url-parse-hint" class="hint-line">Mỗi dòng 1 link HTTPS TikTok / Threads. Tự động loại bỏ link trùng lặp và dòng ghi chú (#).</p>
+            </section>
 
-<section class="post-panel"><div class="section-heading"><h2>Mở đầu</h2><label class="check"><input type="checkbox" id="read-post" checked> Đọc bài viết</label></div><div id="post-capture" class="captured-comment"></div><label for="post-author">Tác giả bài viết</label><input id="post-author" placeholder="Tên tác giả" maxlength="100"><label for="post-text">Nội dung bài viết</label><textarea id="post-text" rows="3" maxlength="1500" placeholder="Thêm bối cảnh để người xem hiểu câu chuyện…"></textarea></section>
-<section class="script-options" aria-labelledby="script-heading"><h2 id="script-heading">Chọn kịch bản</h2><label for="split-mode">Cách chia video</label><select id="split-mode"><option value="duration">Tự chia theo thời lượng</option><option value="even">Chia đều thành N video</option><option value="comments" selected>Chia theo số bình luận / video</option></select><div id="video-count-field" hidden><label for="video-count">Số video muốn tạo</label><input id="video-count" type="number" min="1" max="120" step="1" value="3"></div><div id="comments-per-video-field"><label for="comments-per-video">Bình luận mỗi video</label><input id="comments-per-video" type="number" min="1" max="120" step="1" value="10"><div class="actions script-presets" role="group" aria-label="Chọn nhanh số bình luận mỗi video"><button type="button" class="quiet" data-comments="5">5 cmt</button><button type="button" class="quiet" data-comments="7">7 cmt</button><button type="button" class="quiet" data-comments="10">10 cmt</button><button type="button" class="quiet" data-comments="15">15 cmt</button></div></div><p id="script-summary" class="help" role="status" aria-live="polite"></p><ol id="script-groups" aria-label="Kịch bản các video"></ol><p class="help">Chỉ dùng bình luận đang chọn, theo thứ tự bên trái. Mỗi video có mở đầu nếu bật và đoạn meme theo hai nút bật/tắt. Giới hạn thời lượng bao gồm mở đầu và meme.</p></section><section><div class="section-heading comments-heading"><h2>Kịch bản bình luận <span id="comment-count" class="count">0</span></h2><div><button id="select-all" class="link-button">Chọn tất cả</button><button id="sort-likes" class="link-button">Xếp theo lượt thích</button></div></div><div id="comments"></div><button id="add-comment" class="add-comment">+ Thêm bình luận</button></section>
-<details class="import-panel"><summary>Nhập nhanh từ văn bản hoặc JSON</summary><p class="help">Mỗi dòng: <b>Tên tác giả | Nội dung bình luận</b>. Hoặc nhập JSON theo mẫu trong README.</p><label for="manual-input">Bình luận</label><textarea id="manual-input" rows="5" placeholder="Minh | Đọc tới đây tôi cười mất 5 phút…"></textarea><div class="actions"><button id="import-text" class="secondary">Thêm vào kịch bản</button><label class="file-button secondary" for="import-json">Nhập JSON</label><input id="import-json" type="file" accept=".json" hidden><button id="export-json" class="quiet">Xuất dự án JSON</button><button id="load-demo" class="quiet">Dùng kịch bản mẫu</button></div></details>
-</div>
-<aside class="preview-column"><div class="section-heading"><h2>Khung hình</h2><span>9 : 16</span></div><div class="portrait"><video id="background-preview" muted loop playsinline preload="metadata"></video><div id="preview-empty">Chọn video nền<br><span>từ data/Vid_nen</span></div><img id="card-preview" alt="Ảnh bình luận trong khung hình"><div class="preview-stamp">XEM TRƯỚC BỐ CỤC</div></div><p class="preview-help">Nền xem thử chỉ minh họa. Chế độ ngẫu nhiên chọn lại nền khi dựng. Xem chuyển cảnh và âm thanh trong MP4.</p>
-<div class="render-options"><label for="background">Video nền</label><select id="background"><option value="">Ngẫu nhiên từ data/Vid_nen</option></select><p class="help">Nền tự chọn ngẫu nhiên từ data/Vid_nen. Khi bật meme, chèn một meme giữa hai bình luận trong cùng video, chèn ngay sau mở đầu nếu bật, không chèn sau bình luận cuối; ảnh trong data/img_meme ghép âm thanh cùng tên trong data/mp3_meme. Video lưu tại data/output/projectN.</p><div class="two-col"><div><label for="provider">Nhà cung cấp nghe thử</label><select id="provider"><option value="google">Google · miễn phí</option><option value="edge">Edge · miễn phí</option><option value="elevenlabs">ElevenLabs</option><option value="vbee">Vbee</option></select></div><div><label for="speed">Tốc độ</label><select id="speed"><option value="0.9">0.9×</option><option value="1">1.0×</option><option value="1.1" selected>1.1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></div></div><section id="eleven-voices" aria-labelledby="eleven-voices-heading">
-<h2 id="eleven-voices-heading">Giọng ElevenLabs khi dựng hàng loạt</h2>
-<label for="eleven-voice-count">Số giọng ElevenLabs</label>
-<input id="eleven-voice-count" type="number" min="1" max="120" step="1" value="1" aria-describedby="eleven-voices-help">
-<p id="eleven-voices-help" class="help">Mỗi bình luận chọn ngẫu nhiên một giọng trong danh sách. Phần mở đầu dùng giọng 1. Lưu API key trong Giọng đọc &amp; API.</p>
-<div id="eleven-voice-fields"></div>
-<p class="help">Nếu chỉ dùng một giọng, có thể để trống Voice ID để dùng giọng đã lưu trong Giọng đọc &amp; API.</p>
-</section><label for="voice">Giọng Edge (chỉ dùng với Edge)</label><select id="voice"><option value="vi-VN-HoaiMyNeural">Hoài My · nữ</option><option value="vi-VN-NamMinhNeural">Nam Minh · nam</option></select><button id="voice-preview" class="secondary full">Nghe thử giọng</button><audio id="voice-player" controls hidden></audio><section class="meme-controls" aria-labelledby="meme-controls-heading"><h2 id="meme-controls-heading">Bật/tắt meme để thử</h2><div class="actions"><button type="button" id="use-meme-image" class="secondary" aria-pressed="true" data-label="Ảnh meme">Ảnh meme: Bật</button><button type="button" id="use-meme-sound" class="secondary" aria-pressed="true" data-label="Âm thanh meme">Âm thanh meme: Bật</button></div><p class="help">Hai nút độc lập. Meme xuất hiện sau mở đầu và giữa các bình luận; ảnh vừa khung 60% × 60%, căn giữa ngang và cao hơn trung tâm (45% chiều cao). Chỉ ảnh: hiển thị 1,2 giây, không phát âm thanh meme. Chỉ âm thanh: phát trên nền video. Tắt cả hai: bỏ đoạn meme.</p></section><details><summary>Bố cục &amp; nhịp dựng</summary><div hidden><label for="default-meme">Meme mặc định</label><select id="default-meme"></select><label for="default-sound">Âm thanh meme mặc định</label><select id="default-sound"></select></div><label for="meme-volume">Âm lượng meme</label><input id="meme-volume" type="range" min="0" max="1" step="0.05" value="0.65"><label for="credit">Dòng ghi nguồn</label><input id="credit" value="CRE: COMMENTCUT" maxlength="70" aria-describedby="credit-help"><p id="credit-help" class="help">Chữ trượt liên tục qua nhiều vị trí trong video, đổi hướng mượt và không nhảy khi chuyển cảnh. Xem trước hiển thị vị trí ban đầu. Để trống để tắt.</p><label for="card-y">Vị trí ảnh theo chiều cao</label><input id="card-y" type="range" min="0.1" max="0.6" step="0.01" value="0.28"><label class="check"><input type="checkbox" id="anonymous">Ẩn tên tác giả trên ảnh bình luận</label><p class="help">Ảnh chụp tự tải lên giữ nguyên nội dung.</p><label for="max-seconds">Giới hạn mỗi phần (giây)</label><input id="max-seconds" type="number" min="15" max="600" value="120"></details><div class="two-col export-config"><div><label for="resolution">Độ phân giải</label><select id="resolution"><option value="360">360p · thử nhanh</option><option value="720" selected>720p · HD</option><option value="1080">1080p · Full HD</option></select></div><div class="format-note">MP4 / H.264<br><span>30 FPS · AAC</span></div></div><button id="render" class="primary render-button">Dựng hàng loạt</button><div id="active-job" aria-live="polite"></div></div>
-</aside></div></section>
+            <!-- UNIFIED PRODUCTION CONFIG CARD -->
+            <section class="panel">
+              <div class="panel-header">
+                <div class="panel-title-wrap">
+                  <h2>2. Cấu hình Crawl, Chia tập &amp; Nguồn Nền / Meme</h2>
+                </div>
+                <span id="preset-save-hint" class="meta-note">Tự lưu cấu hình</span>
+              </div>
 
-<section id="view-days" class="view" hidden>
-<div class="page-heading">
-<div><h1>Lịch sử theo ngày crawl.</h1><p>Bấm vào từng ngày (tính theo ngày crawl, không phải ngày đăng bài) để xem các bài viết và video đã lấy trong ngày đó.</p></div>
-<button id="refresh-days" class="secondary">Làm mới</button>
-</div>
-<div class="days-layout">
-<aside id="days-list" class="days-sidebar" aria-label="Danh sách ngày crawl"></aside>
-<div id="day-detail" class="day-projects" aria-live="polite"></div>
-</div>
-</section>
+              <div class="field-grid-3">
+                <div class="field">
+                  <label for="batch-limit">Cmt tối đa / URL</label>
+                  <input id="batch-limit" type="number" min="1" max="120" step="1" value="30">
+                  <div class="chip-row" role="group" aria-label="Chọn nhanh số bình luận">
+                    <button type="button" class="chip-btn" data-limit-preset="20">20</button>
+                    <button type="button" class="chip-btn" data-limit-preset="30">30</button>
+                    <button type="button" class="chip-btn" data-limit-preset="50">50</button>
+                    <button type="button" class="chip-btn" data-limit-preset="100">100</button>
+                  </div>
+                </div>
 
-<section id="view-library" class="view" hidden><div class="page-heading"><div><h1>Chất liệu cho câu chuyện.</h1><p>Nạp một lần, dùng lại cho mọi video.</p></div><button id="create-demo-assets" class="secondary">Tạo media minh họa</button></div><div class="library-upload"><label for="asset-kind">Loại media</label><select id="asset-kind"><option value="background">Video nền</option><option value="image">Ảnh meme / ảnh bình luận</option><option value="sound">Âm thanh meme</option></select><label for="asset-files">Chọn tệp · tối đa 500MB mỗi tệp</label><input id="asset-files" type="file" multiple><button id="upload-assets" class="primary">Thêm vào thư viện</button></div><p class="help">Nền được crop giữa, bỏ tiếng gốc và lặp khi cần. Ảnh hỗ trợ PNG/JPG/WebP; âm thanh MP3/WAV/OGG/M4A.</p><div id="asset-list" class="asset-grid"></div></section>
-<section id="view-exports" class="view" hidden><div class="page-heading"><div><h1>Video đã dựng.</h1><p>Bản xuất, phụ đề và timeline của từng dự án.</p></div><button id="refresh-jobs" class="secondary">Làm mới</button></div><div id="jobs"></div></section>
-<section id="view-settings" class="view" hidden><div class="page-heading"><div><h1>Chọn giọng kể của bạn.</h1><p>Bắt đầu miễn phí. Đổi nhà cung cấp bất cứ khi nào.</p></div></div><div class="settings-layout"><div><section class="settings-section"><h2>Giọng miễn phí</h2><p>Google TTS tiếng Việt chạy ngay, không cần API key. Edge có Hoài My và Nam Minh; có thể lỗi khi dịch vụ thay đổi.</p><p class="help">Cả hai cần Internet. Ứng dụng báo lỗi khi giọng đọc không sẵn sàng.</p></section><form id="settings-form"><section class="settings-section"><h2>ElevenLabs</h2><label for="elevenlabs_key">API key <span id="eleven-status"></span></label><input id="elevenlabs_key" type="password" autocomplete="off" placeholder="Để trống để giữ key đã lưu"><label for="elevenlabs_voice">Voice ID</label><input id="elevenlabs_voice"><label for="elevenlabs_model">Model ID</label><input id="elevenlabs_model" placeholder="eleven_v3"></section><section class="settings-section"><h2>Vbee</h2><label for="vbee_token">Access token <span id="vbee-status"></span></label><input id="vbee_token" type="password" autocomplete="off" placeholder="Để trống để giữ token đã lưu"><label for="vbee_app_id">App ID</label><input id="vbee_app_id"><label for="vbee_voice">Voice code</label><input id="vbee_voice" placeholder="Mã giọng từ dashboard Vbee"><label for="vbee_callback">Callback HTTPS do bạn quản lý</label><input id="vbee_callback" type="url" placeholder="https://your-domain.com/vbee/callback"><p class="help">Vbee gửi kết quả tới callback này; ứng dụng dùng polling để lấy audio. Cần tài khoản và gói API của bạn.</p></section><button class="primary" type="submit">Lưu cấu hình API</button><p class="help">Key lưu trong data/settings.json trên máy. Không được gửi lại trình duyệt hoặc nằm trong JSON dự án. Không chia sẻ thư mục data.</p></form></div><aside class="settings-note"><h2>Nghe trước khi chọn.</h2><p>Điền cấu hình, quay lại Biên tập và bấm “Nghe thử giọng”.</p><p>Chọn ElevenLabs hoặc Vbee sẽ gửi văn bản đến dịch vụ tương ứng và có thể sử dụng quota trả phí của bạn.</p><p>Adapter Vbee cần kiểm tra với tài khoản thực. Chưa có key nên bản bàn giao chưa kiểm chứng hai dịch vụ trả phí.</p></aside></div></section>
-<div id="notice" role="status" aria-live="polite" hidden></div>
-</main></body></html>
+                <div class="field">
+                  <label for="batch-split-mode">Cách chia video</label>
+                  <select id="batch-split-mode">
+                    <option value="comments" selected>Theo cmt / video</option>
+                    <option value="even">Chia đều N video</option>
+                    <option value="duration">Theo thời lượng</option>
+                  </select>
+                </div>
+
+                <div id="wrap-cpv" class="field">
+                  <label for="batch-cpv">Số cmt / 1 video</label>
+                  <input id="batch-cpv" type="number" min="1" max="120" step="1" value="10">
+                  <div class="chip-row" role="group" aria-label="Chọn nhanh số cmt mỗi video">
+                    <button type="button" class="chip-btn" data-cpv-preset="5">5</button>
+                    <button type="button" class="chip-btn" data-cpv-preset="10">10</button>
+                    <button type="button" class="chip-btn" data-cpv-preset="15">15</button>
+                  </div>
+                </div>
+
+                <div id="wrap-vcount" class="field" hidden>
+                  <label for="batch-vcount">Số video / URL</label>
+                  <input id="batch-vcount" type="number" min="1" max="120" step="1" value="3">
+                </div>
+
+                <div id="wrap-duration-note" class="field" hidden>
+                  <label for="opt-max-seconds-quick">Giới hạn mỗi video (giây)</label>
+                  <input id="opt-max-seconds-quick" type="number" min="15" max="600" step="5" value="120">
+                </div>
+              </div>
+
+              <div id="split-formula-hint" class="formula-banner">Mỗi URL lấy tối đa 30 cmt → chia 10 cmt/video (~3 video MP4/URL).</div>
+
+              <div class="divider"></div>
+
+              <!-- VIDEO BACKGROUND FOLDER + QUALITY -->
+              <div class="bg-source-box">
+                <div class="bg-source-top">
+                  <label for="opt-background">Video nền (Lấy ngẫu nhiên hoặc chọn riêng)</label>
+                  <div class="folder-picker-inline">
+                    <span id="studio-folder-background" class="folder-path-chip" title="">data/Vid_nen</span>
+                    <button type="button" class="btn btn-secondary btn-xs" data-pick-folder="background">Chọn folder…</button>
+                  </div>
+                </div>
+                <div class="field-grid-3">
+                  <div class="field">
+                    <select id="opt-background" aria-label="Chọn chế độ lấy video nền">
+                      <option value="">Ngẫu nhiên trong folder</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <select id="opt-resolution" aria-label="Độ phân giải MP4">
+                      <option value="360">360p · Nhanh</option>
+                      <option value="720" selected>720p · HD</option>
+                      <option value="1080">1080p · Full HD</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <select id="opt-speed" aria-label="Tốc độ giọng đọc">
+                      <option value="0.9">Tốc độ 0.9×</option>
+                      <option value="1">Tốc độ 1.0×</option>
+                      <option value="1.1" selected>Tốc độ 1.1×</option>
+                      <option value="1.25">Tốc độ 1.25×</option>
+                      <option value="1.5">Tốc độ 1.5×</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- 3-SOURCE RANDOM MEME DECK -->
+              <div class="meme-deck-section">
+                <div class="meme-deck-head">
+                  <h3>Meme chuyển cảnh (Lấy ngẫu nhiên từ Folder)</h3>
+                  <span class="meta-note">Chọn Video, Ảnh+Tiếng, hoặc cả 3</span>
+                </div>
+
+                <div class="meme-source-rows">
+                  <div class="meme-source-row">
+                    <label class="meme-check-label">
+                      <input type="checkbox" id="opt-meme-video">
+                      <span>
+                        <strong>Video Meme</strong>
+                        <small>Độc lập hoặc trộn chung</small>
+                      </span>
+                    </label>
+                    <span id="studio-folder-meme_video" class="folder-path-chip" title="">data/vid_meme</span>
+                    <span id="badge-count-meme_video" class="badge">0 video</span>
+                    <button type="button" class="btn btn-secondary btn-xs" data-pick-folder="meme_video">Chọn folder…</button>
+                  </div>
+
+                  <div class="meme-source-row">
+                    <label class="meme-check-label">
+                      <input type="checkbox" id="opt-meme-image" checked>
+                      <span>
+                        <strong>Ảnh Meme</strong>
+                        <small>Bắt buộc đi kèm Tiếng</small>
+                      </span>
+                    </label>
+                    <span id="studio-folder-image" class="folder-path-chip" title="">data/img_meme</span>
+                    <span id="badge-count-image" class="badge">0 ảnh</span>
+                    <button type="button" class="btn btn-secondary btn-xs" data-pick-folder="image">Chọn folder…</button>
+                  </div>
+
+                  <div class="meme-source-row">
+                    <label class="meme-check-label">
+                      <input type="checkbox" id="opt-meme-sound" checked>
+                      <span>
+                        <strong>Tiếng Meme</strong>
+                        <small>Ghép trùng tên hoặc ngẫu nhiên</small>
+                      </span>
+                    </label>
+                    <span id="studio-folder-sound" class="folder-path-chip" title="">data/mp3_meme</span>
+                    <span id="badge-count-sound" class="badge">0 âm</span>
+                    <button type="button" class="btn btn-secondary btn-xs" data-pick-folder="sound">Chọn folder…</button>
+                  </div>
+                </div>
+                <p id="meme-rule-hint" class="hint-line">Đang bật Ảnh + Tiếng Meme: ưu tiên ghép trùng tên file, khác tên tự ghép ngẫu nhiên.</p>
+              </div>
+
+              <div class="toggle-grid">
+                <label class="switch-card">
+                  <input type="checkbox" id="opt-auto-render" checked>
+                  <span>
+                    <strong>Tự động Render MP4</strong>
+                    <small>Dựng video ngay khi mỗi URL crawl xong</small>
+                  </span>
+                </label>
+                <label class="switch-card">
+                  <input type="checkbox" id="opt-read-post" checked>
+                  <span>
+                    <strong>Đọc bài gốc mở đầu</strong>
+                    <small>Dùng ảnh bài viết gốc + giọng đọc #1</small>
+                  </span>
+                </label>
+              </div>
+
+              <details id="advanced-layout-details" class="advanced-drawer">
+                <summary>Tùy chỉnh bố cục nâng cao &amp; Xem trước khung 9:16</summary>
+                <div class="advanced-grid">
+                  <div class="advanced-controls">
+                    <div class="field">
+                      <label for="opt-credit">Dòng ghi nguồn (trượt mượt trên video)</label>
+                      <input id="opt-credit" type="text" value="CRE: COMMENTCUT" maxlength="70" placeholder="Để trống nếu muốn tắt">
+                    </div>
+                    <div class="field">
+                      <label for="opt-card-y">Vị trí thẻ ảnh theo chiều dọc (<span id="val-card-y">28%</span>)</label>
+                      <input id="opt-card-y" type="range" min="0.1" max="0.6" step="0.01" value="0.28">
+                    </div>
+                    <div class="field">
+                      <label for="opt-meme-volume">Âm lượng Meme (<span id="val-meme-vol">65%</span>)</label>
+                      <input id="opt-meme-volume" type="range" min="0" max="1" step="0.05" value="0.65">
+                    </div>
+                    <div class="field">
+                      <label for="opt-max-seconds">Thời lượng tối đa mỗi phần (giây)</label>
+                      <input id="opt-max-seconds" type="number" min="15" max="600" step="5" value="120">
+                    </div>
+                  </div>
+                  <div class="mini-preview-col">
+                    <div class="mini-portrait">
+                      <video id="background-preview" muted loop playsinline preload="metadata"></video>
+                      <img id="card-preview" alt="Xem trước vị trí watermark và thẻ ảnh" hidden>
+                      <div id="preview-empty-note" class="mini-preview-empty">9:16 Preview</div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </section>
+          </div>
+
+          <!-- PINNED LAUNCH FOOTER -->
+          <footer class="launch-footer">
+            <div id="preflight-box" class="preflight-bar ready" role="status" aria-live="polite"></div>
+            <button type="button" id="btn-start-batch" class="btn btn-primary btn-lg btn-block">
+              Bắt đầu sản xuất hàng loạt
+            </button>
+          </footer>
+        </section>
+
+        <!-- RIGHT PANE: LIVE MONITOR -->
+        <section class="studio-right" aria-label="Trạm theo dõi tiến trình hàng loạt">
+          <div class="monitor-header">
+            <div class="monitor-title-group">
+              <h2>Tiến trình &amp; Hàng đợi trực tiếp</h2>
+              <select id="batch-selector" class="select-compact" aria-label="Chọn lô sản xuất">
+                <option value="">Chưa có lô nào</option>
+              </select>
+            </div>
+            <div class="toolbar-inline">
+              <button type="button" id="btn-retry-failed" class="btn btn-warning btn-xs" hidden>Chạy lại link lỗi</button>
+              <button type="button" id="btn-stop-batch" class="btn btn-danger btn-xs" hidden>Dừng lô</button>
+            </div>
+          </div>
+
+          <div class="kpi-strip">
+            <div class="kpi-card">
+              <span class="kpi-label">Tổng URL</span>
+              <strong id="kpi-total" class="kpi-value">0</strong>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Đã Crawl xong</span>
+              <strong id="kpi-crawled" class="kpi-value kpi-info">0</strong>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">MP4 đã xuất</span>
+              <strong id="kpi-videos" class="kpi-value kpi-success">0</strong>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Lỗi / Cần xử lý</span>
+              <strong id="kpi-failed" class="kpi-value kpi-danger">0</strong>
+            </div>
+          </div>
+
+          <div id="batch-live-strip" class="live-strip" hidden>
+            <div class="live-strip-top">
+              <span id="batch-status-badge" class="badge">Đang chờ</span>
+              <span id="batch-live-msg" class="live-msg">Đang chuẩn bị…</span>
+            </div>
+            <progress id="batch-progress-bar" max="100" value="0"></progress>
+          </div>
+
+          <div class="filter-bar" role="tablist" aria-label="Lọc danh sách URL trong lô">
+            <button type="button" class="filter-pill active" data-batch-filter="all">Tất cả <span id="flt-count-all">0</span></button>
+            <button type="button" class="filter-pill" data-batch-filter="active">Đang xử lý <span id="flt-count-active">0</span></button>
+            <button type="button" class="filter-pill" data-batch-filter="done">Hoàn tất <span id="flt-count-done">0</span></button>
+            <button type="button" class="filter-pill" data-batch-filter="failed">Lỗi <span id="flt-count-failed">0</span></button>
+          </div>
+
+          <div id="batch-queue-list" class="queue-scroll" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <!-- VIEW 2: OUTPUTS & HISTORY -->
+      <section id="view-history" class="view-pane history-split" hidden>
+        <aside class="history-dates-col" aria-label="Danh sách ngày crawl">
+          <div class="subpane-head">
+            <h2>Theo ngày Crawl</h2>
+          </div>
+          <div id="history-days-list" class="dates-scroll"></div>
+        </aside>
+
+        <div class="history-main-col">
+          <div class="history-toolbar">
+            <input id="history-search" type="search" class="search-input" placeholder="Tìm tiêu đề, @tác giả hoặc đường dẫn URL…" aria-label="Tìm bài viết đã crawl">
+            <select id="history-filter" class="select-compact" aria-label="Lọc theo trạng thái dựng">
+              <option value="all">Mọi trạng thái</option>
+              <option value="done">Đã xuất MP4</option>
+              <option value="running">Đang dựng / Chờ dựng</option>
+              <option value="pending">Chưa dựng / Lỗi</option>
+            </select>
+            <button type="button" id="btn-bulk-rerender" class="btn btn-primary btn-sm" hidden>Render tất cả bài chưa dựng</button>
+            <button type="button" id="btn-refresh-history" class="btn btn-secondary btn-sm">Làm mới</button>
+          </div>
+          <p id="history-summary-line" class="hint-line"></p>
+          <div id="history-projects-list" class="history-scroll"></div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: MEDIA LIBRARY & FOLDERS -->
+      <section id="view-library" class="view-pane single-scroll-pane" hidden>
+        <div class="folder-cards-grid">
+          <div class="folder-card">
+            <div class="folder-card-info">
+              <span id="lib-path-background" class="folder-tag" title="">data/Vid_nen</span>
+              <h3>Video nền dọc</h3>
+              <p><strong id="count-vid-nen">0</strong> video trong folder</p>
+            </div>
+            <div class="folder-card-actions">
+              <button type="button" class="btn btn-primary btn-xs" data-pick-folder="background">Chọn folder…</button>
+              <button type="button" class="btn btn-secondary btn-xs" data-open-folder="background">Mở</button>
+              <button type="button" id="reset-folder-background" class="btn btn-ghost btn-xs" data-reset-folder="background" hidden>Mặc định</button>
+            </div>
+          </div>
+
+          <div class="folder-card">
+            <div class="folder-card-info">
+              <span id="lib-path-meme_video" class="folder-tag" title="">data/vid_meme</span>
+              <h3>Video Meme</h3>
+              <p><strong id="count-vid-meme">0</strong> video meme</p>
+            </div>
+            <div class="folder-card-actions">
+              <button type="button" class="btn btn-primary btn-xs" data-pick-folder="meme_video">Chọn folder…</button>
+              <button type="button" class="btn btn-secondary btn-xs" data-open-folder="meme_video">Mở</button>
+              <button type="button" id="reset-folder-meme_video" class="btn btn-ghost btn-xs" data-reset-folder="meme_video" hidden>Mặc định</button>
+            </div>
+          </div>
+
+          <div class="folder-card">
+            <div class="folder-card-info">
+              <span id="lib-path-image" class="folder-tag" title="">data/img_meme</span>
+              <h3>Ảnh Meme</h3>
+              <p><strong id="count-img-meme">0</strong> ảnh tĩnh</p>
+            </div>
+            <div class="folder-card-actions">
+              <button type="button" class="btn btn-primary btn-xs" data-pick-folder="image">Chọn folder…</button>
+              <button type="button" class="btn btn-secondary btn-xs" data-open-folder="image">Mở</button>
+              <button type="button" id="reset-folder-image" class="btn btn-ghost btn-xs" data-reset-folder="image" hidden>Mặc định</button>
+            </div>
+          </div>
+
+          <div class="folder-card">
+            <div class="folder-card-info">
+              <span id="lib-path-sound" class="folder-tag" title="">data/mp3_meme</span>
+              <h3>Tiếng Meme</h3>
+              <p><strong id="count-mp3-meme">0</strong> tệp âm thanh</p>
+            </div>
+            <div class="folder-card-actions">
+              <button type="button" class="btn btn-primary btn-xs" data-pick-folder="sound">Chọn folder…</button>
+              <button type="button" class="btn btn-secondary btn-xs" data-open-folder="sound">Mở</button>
+              <button type="button" id="reset-folder-sound" class="btn btn-ghost btn-xs" data-reset-folder="sound" hidden>Mặc định</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="meme-pair-card" class="panel pair-summary-banner">
+          <div>
+            <strong id="pair-status-title">Kho Meme sẵn sàng</strong>
+            <p id="pair-status-desc" class="hint-line">Có thể trỏ từng mục tới bất kỳ thư mục nào trên ổ cứng hoặc dùng thư mục mặc định trong data.</p>
+          </div>
+        </div>
+
+        <div class="panel library-bar">
+          <div class="library-upload-group">
+            <div class="field-inline">
+              <label for="asset-kind">Tải thêm tệp vào folder đang chọn</label>
+              <select id="asset-kind" class="select-compact">
+                <option value="background">Video nền</option>
+                <option value="meme_video">Video Meme</option>
+                <option value="image">Ảnh Meme</option>
+                <option value="sound">Tiếng Meme</option>
+              </select>
+            </div>
+            <input id="asset-files" type="file" multiple aria-label="Chọn tệp media để tải lên">
+            <button type="button" id="btn-upload-assets" class="btn btn-primary btn-sm">Tải lên</button>
+            <button type="button" id="btn-refresh-assets" class="btn btn-secondary btn-sm">Quét lại folder</button>
+          </div>
+
+          <div class="filter-bar">
+            <button type="button" class="filter-pill active" data-lib-filter="all">Tất cả</button>
+            <button type="button" class="filter-pill" data-lib-filter="background">Video nền</button>
+            <button type="button" class="filter-pill" data-lib-filter="meme_video">Video Meme</button>
+            <button type="button" class="filter-pill" data-lib-filter="image">Ảnh Meme</button>
+            <button type="button" class="filter-pill" data-lib-filter="sound">Tiếng Meme</button>
+          </div>
+        </div>
+
+        <div id="asset-list" class="asset-grid"></div>
+      </section>
+
+      <!-- VIEW 4: ELEVENLABS VOICES -->
+      <section id="view-voices" class="view-pane single-scroll-pane" hidden>
+        <div class="voices-layout">
+          <form id="settings-form" class="panel voices-panel">
+            <div class="panel-header">
+              <div class="panel-title-wrap">
+                <h2>Kết nối ElevenLabs API</h2>
+                <span id="eleven-status" class="badge">Chưa lưu Key</span>
+              </div>
+            </div>
+
+            <div class="field-grid-2">
+              <div class="field">
+                <label for="elevenlabs_key">ElevenLabs API Key</label>
+                <input id="elevenlabs_key" type="password" autocomplete="off" placeholder="Để trống nếu muốn giữ nguyên key đã lưu">
+              </div>
+              <div class="field">
+                <label for="elevenlabs_model">Model ID</label>
+                <input id="elevenlabs_model" type="text" placeholder="eleven_v3" value="eleven_v3">
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="panel-header">
+              <div class="panel-title-wrap">
+                <h2>Danh sách Voice ID ngẫu nhiên</h2>
+              </div>
+              <div class="voice-count-box">
+                <label for="eleven-voice-count">Số lượng giọng</label>
+                <input id="eleven-voice-count" type="number" min="1" max="120" step="1" value="3" required>
+              </div>
+            </div>
+
+            <p class="hint-line">Giọng #1 luôn đọc tiêu đề mở đầu. Mỗi bình luận sẽ chọn ngẫu nhiên 1 giọng trong danh sách để tạo hội thoại sinh động.</p>
+
+            <div id="eleven-voice-fields" class="voice-rows"></div>
+            <audio id="render-voice-player" controls hidden aria-label="Trình phát nghe thử giọng đọc"></audio>
+
+            <details class="advanced-drawer">
+              <summary>Voice ID dự phòng (khi chỉ dùng 1 ô trống)</summary>
+              <div class="field">
+                <label for="elevenlabs_voice">Voice ID mặc định</label>
+                <input id="elevenlabs_voice" type="text" maxlength="100" pattern="[A-Za-z0-9_\-]{0,100}" autocomplete="off" placeholder="Tùy chọn">
+              </div>
+            </details>
+
+            <div class="voices-save-bar">
+              <button type="submit" id="btn-save-voices" class="btn btn-primary">Lưu cấu hình ElevenLabs</button>
+              <span id="voice-settings-status" class="meta-note" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+
+          <aside class="panel voices-guide">
+            <h2>Cơ chế phối giọng hàng loạt</h2>
+            <ul class="guide-list">
+              <li><strong>Mở đầu cố định:</strong> Ảnh bài viết gốc ở đầu mỗi tập luôn được đọc bằng <b>Voice ID 1</b>.</li>
+              <li><strong>Bình luận đa giọng:</strong> Mỗi bình luận lấy ngẫu nhiên một Voice ID trong danh sách bạn lưu.</li>
+              <li><strong>Tiết kiệm Credit tối đa:</strong> Âm thanh đã tạo được lưu cache SHA-256 trên ổ cứng. Khi Render lại hoặc chia lại số tập, ứng dụng tái sử dụng ngay không gọi lại API.</li>
+              <li><strong>Lưu ý quyền API Key:</strong> Nếu dùng Scoped API Key trên ElevenLabs, hãy bật quyền <code>text_to_speech</code>.</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- VIDEO PREVIEW DIALOG -->
+  <dialog id="video-modal" class="video-dialog" aria-labelledby="modal-video-title">
+    <div class="dialog-head">
+      <h2 id="modal-video-title">Xem trước video</h2>
+      <button type="button" id="btn-close-modal" class="btn btn-ghost btn-xs">Đóng ✕</button>
+    </div>
+    <div id="modal-part-tabs" class="chip-row modal-parts"></div>
+    <div class="dialog-player-wrap">
+      <video id="modal-video-player" controls playsinline></video>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" id="modal-open-folder" class="btn btn-secondary btn-sm">Mở thư mục chứa file</button>
+      <a id="modal-download-link" class="btn btn-primary btn-sm" href="#" download>Tải MP4 này</a>
+    </div>
+  </dialog>
+
+  <div id="notice" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
